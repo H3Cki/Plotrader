@@ -53,6 +53,8 @@ type OrderParams struct {
 	Order      OrderRequest `json:"order" validate:"required"`
 	TakeProfit *StopRequest `json:"takeProfitPlot"`
 	StopLoss   *StopRequest `json:"stopLossPlot"`
+
+	WebhookURL string `json:"webhook"`
 }
 
 type Pair struct {

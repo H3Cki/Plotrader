@@ -9,25 +9,29 @@ import (
 
 	"github.com/H3Cki/Plotrader/core/outbound"
 	"github.com/pkg/errors"
+	"go.uber.org/zap"
 )
 
 type Publisher struct {
-	addr string
+	logger *zap.SugaredLogger
 }
 
-func New(addr string) *Publisher {
-	return &Publisher{
-		addr: addr,
+func New(logger *zap.SugaredLogger) *Publisher {
+	return &Publisher{logger: logger}
+}
+
+func (p *Publisher) PublishOrderUpdate(ctx context.Context, update outbound.OrderUpdate) error {
+	if update.Params.WebhookURL == "" {
+		p.logger.Debug("webhook URL not specified for update %+v", update)
+		return nil
 	}
-}
 
-func (p *Publisher) PublishOrderUpdate(ctx context.Context, req outbound.OrderUpdate) error {
-	msgBytes, err := json.Marshal(req)
+	msgBytes, err := json.Marshal(update)
 	if err != nil {
 		return errors.Wrap(err, "error marshalling message")
 	}
 
-	res, err := http.Post(p.addr, "application/json", bytes.NewBuffer(msgBytes))
+	res, err := http.Post(update.Params.WebhookURL, "application/json", bytes.NewBuffer(msgBytes))
 	if err != nil {
 		return err
 	}

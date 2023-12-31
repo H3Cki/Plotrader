@@ -18,7 +18,7 @@ var RESTCommand = &cli.Command{
 	Usage:  "start a http rest api",
 	Action: runRESTCommand,
 	Flags: []cli.Flag{
-		&cli.StringFlag{Name: addrProp, Usage: "http rest server listen addr", EnvVars: []string{"REST_ADDR"}, Value: "0.0.0.0:8080"},
+		&cli.StringFlag{Name: addrProp, Usage: "http rest server listen addr", EnvVars: []string{"ADDR"}, Value: "0.0.0.0:8080"},
 	},
 }
 
@@ -31,17 +31,13 @@ func runRESTCommand(ctx *cli.Context) error {
 		Env:        ctx.App.Metadata["Env"].(string),
 	}
 
-	whkConfig := outboundcfg.WebhookPublisherConfig{
-		Addr: "http://localhost:8181",
-	}
-
 	restCfg := inboundcfg.RESTConfig{
 		Addr: ctx.String(addrProp),
 	}
 
 	app, err := config.NewApp(appConfig,
 		config.WithLogger(logger.Sugar()),
-		outboundcfg.WithWebhookPublisher(whkConfig),
+		outboundcfg.WithWebhookPublisher,
 		inboundcfg.WithUpdaterService,
 		inboundcfg.WithREST(restCfg),
 	)

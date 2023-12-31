@@ -24,17 +24,8 @@ func WithSNSPublisher(cfg SNSPublisherConfig) func(app *config.App) error {
 	}
 }
 
-type WebhookPublisherConfig struct {
-	Addr string `validate:"required"`
-}
+func WithWebhookPublisher(app *config.App) error {
+	app.Publisher = webhookpublisher.New(app.Logger)
+	return nil
 
-func WithWebhookPublisher(cfg WebhookPublisherConfig) func(app *config.App) error {
-	return func(app *config.App) error {
-		if err := validator.New().Struct(cfg); err != nil {
-			return err
-		}
-
-		app.Publisher = webhookpublisher.New(cfg.Addr)
-		return nil
-	}
 }
