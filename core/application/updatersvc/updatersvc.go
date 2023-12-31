@@ -59,14 +59,14 @@ func (s *Service) CreateOrder(ctx context.Context, req inbound.CreateOrderReques
 		return err
 	}
 
-	orderPlot, err := parsePlotMap(req.Order.Plot)
+	orderPlot, err := parsePlotMap(req.Order.Plot, !req.DisableProtection)
 	if err != nil {
 		return errors.Wrap(err, "error parsing price plot")
 	}
 
 	var takeProfit, stopLoss *domain.StopRequest
 	if req.TakeProfit != nil {
-		tp, err := parsePlotMap(req.TakeProfit.Plot)
+		tp, err := parsePlotMap(req.TakeProfit.Plot, !req.DisableProtection)
 		if err != nil {
 			return errors.Wrap(err, "error parsing take profit plot")
 		}
@@ -79,7 +79,7 @@ func (s *Service) CreateOrder(ctx context.Context, req inbound.CreateOrderReques
 	}
 
 	if req.StopLoss != nil {
-		sl, err := parsePlotMap(req.StopLoss.Plot)
+		sl, err := parsePlotMap(req.StopLoss.Plot, !req.DisableProtection)
 		if err != nil {
 			return errors.Wrap(err, "error parsing stop loss plot")
 		}

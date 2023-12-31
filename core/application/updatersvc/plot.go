@@ -47,7 +47,7 @@ type minMaxPlotJSON struct {
 	Plots []plotJSON
 }
 
-func parsePlotMap(plot map[string]any) (geometry.Plot, error) {
+func parsePlotMap(plot map[string]any, protect bool) (geometry.Plot, error) {
 	bytes, err := json.Marshal(plot)
 	if err != nil {
 		return nil, errors.Wrap(err, "error marshalling plot")
@@ -58,7 +58,16 @@ func parsePlotMap(plot map[string]any) (geometry.Plot, error) {
 		return nil, errors.Wrap(err, "error unmarshalling plot")
 	}
 
-	return parsePlot(pj)
+	parsedPlot, err := parsePlot(pj)
+	if err != nil {
+		return nil, fmt.Errorf("error parsing plot: %w", err)
+	}
+
+	if protect {
+		return geometry.NewProtector(parsedPlot), nil
+	}
+
+	return parsedPlot, nil
 }
 
 func parsePlot(pj plotJSON) (geometry.Plot, error) {
