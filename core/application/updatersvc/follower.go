@@ -194,7 +194,7 @@ func orderDetails(req *domain.Order, t time.Time) (orderDetails outbound.OrderDe
 			tp = &outbound.StopDetails{
 				Type:        req.Params.TakeProfit.Type,
 				TimeInForce: req.Params.TakeProfit.TimeInForce,
-				QuentityPct: req.Params.TakeProfit.QuantityPct,
+				QuantityPct: req.Params.TakeProfit.QuantityPct,
 				Price:       tpPrice,
 			}
 		}
@@ -208,7 +208,7 @@ func orderDetails(req *domain.Order, t time.Time) (orderDetails outbound.OrderDe
 			sl = &outbound.StopDetails{
 				Type:        req.Params.StopLoss.Type,
 				TimeInForce: req.Params.StopLoss.TimeInForce,
-				QuentityPct: req.Params.StopLoss.QuantityPct,
+				QuantityPct: req.Params.StopLoss.QuantityPct,
 				Price:       slPrice,
 			}
 		}

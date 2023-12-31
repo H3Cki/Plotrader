@@ -35,7 +35,7 @@ type OrderDetails struct {
 type StopDetails struct {
 	Type        domain.OrderType
 	TimeInForce domain.TimeInForce
-	QuentityPct float64
+	QuantityPct float64
 	Price       float64
 }
 
@@ -44,4 +44,10 @@ type CancelOrderRequest struct {
 	OrderID      string
 	TakeProfitID string
 	StopLossID   string
+}
+
+type ExchangeInfoer[T any] interface {
+	Exists(name string) bool
+	Save(name string, data T) error
+	Read(name string) (T, error)
 }

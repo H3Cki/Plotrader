@@ -2,7 +2,6 @@ package binancefutures
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -15,25 +14,37 @@ import (
 	"go.uber.org/zap"
 )
 
-var exchangeInfoFileName = "binancefutures_ei.json"
+var (
+	eiFileName = "binancefutures_ei.json"
+	maxEiAge   = 24 * time.Hour
+)
 
-type Config struct {
+type UserConfig struct {
 	Testnet    bool   `json:"testnet"`
 	API_KEY    string `json:"API_KEY" validate:"required"`
 	SECRET_KEY string `json:"SECRET_KEY" validate:"required"`
 }
 
+type Config struct {
+	ExchangeInfoer outbound.ExchangeInfoer[ExchangeInfo]
+	UserConfig     UserConfig
+}
+
 type Exchange struct {
 	logger *zap.SugaredLogger
 	client *futures.Client
-	ei     *futures.ExchangeInfo
+	ei     ExchangeInfo
+	eier   outbound.ExchangeInfoer[ExchangeInfo]
 }
 
+type ExchangeInfo futures.ExchangeInfo
+
 func New(logger *zap.SugaredLogger, cfg Config) *Exchange {
-	futures.UseTestnet = cfg.Testnet
+	futures.UseTestnet = cfg.UserConfig.Testnet
 	return &Exchange{
 		logger: logger,
-		client: futures.NewClient(cfg.API_KEY, cfg.SECRET_KEY),
+		client: futures.NewClient(cfg.UserConfig.API_KEY, cfg.UserConfig.SECRET_KEY),
+		eier:   cfg.ExchangeInfoer,
 	}
 }
 
@@ -41,16 +52,8 @@ func (f *Exchange) Init(ctx context.Context) error {
 	if err := f.client.NewPingService().Do(ctx); err != nil {
 		return err
 	}
-
-	err := f.exchangeInfoFromFile()
-	if errors.Is(err, os.ErrNotExist) || (err == nil && f.eiOutdated()) {
-		f.logger.Info("loading exchange info from file")
-		if err := f.exchangeInfo(ctx); err != nil {
-			return fmt.Errorf("error loading exchange info: %w", err)
-		}
-	}
-
-	return nil
+	_, err := f.info(ctx, false)
+	return err
 }
 
 func (f *Exchange) GetPrice(ctx context.Context, req outbound.GetPriceRequest) (float64, error) {
@@ -83,7 +86,7 @@ type createOrderRequest struct {
 }
 
 func (f *Exchange) CreateOrder(ctx context.Context, req outbound.CreateOrderRequest) (domain.ExchangeOrders, error) {
-	symbol, err := f.symbol(pairToSymbol(req.Pair))
+	symbol, err := f.symbol(ctx, pairToSymbol(req.Pair))
 	if err != nil {
 		return domain.ExchangeOrders{}, err
 	}
@@ -212,58 +215,18 @@ func (f *Exchange) cancelOrder(ctx context.Context, req cancelOrderRequest) erro
 	return err
 }
 
-func (f *Exchange) exchangeInfo(ctx context.Context) error {
-	res, err := f.client.NewExchangeInfoService().Do(ctx)
+func (f *Exchange) getExchangeInfo(ctx context.Context) (ExchangeInfo, error) {
+	ei, err := f.client.NewExchangeInfoService().Do(ctx)
 	if err != nil {
-		return fmt.Errorf("unable to fetch spot exchange info: %w", err)
+		return ExchangeInfo{}, err
 	}
-
-	bytes, err := json.Marshal(res)
-	if err != nil {
-		return fmt.Errorf("unable to marshal exchange info: %w", err)
-	}
-
-	err = os.WriteFile(exchangeInfoFileName, bytes, 0o777)
-	if err != nil {
-		f.logger.Errorf("unable to save exchange info to file: %w", err)
-	}
-
-	f.ei = res
-
-	return nil
+	return ExchangeInfo(*ei), err
 }
 
-func (f *Exchange) exchangeInfoFromFile() error {
-	bytes, err := os.ReadFile(exchangeInfoFileName)
+func (f *Exchange) symbol(ctx context.Context, symbol string) (futures.Symbol, error) {
+	eiUpdated, err := f.info(ctx, false)
 	if err != nil {
-		return err
-	}
-
-	ei := &futures.ExchangeInfo{}
-	if err := json.Unmarshal(bytes, ei); err != nil {
-		return err
-	}
-
-	f.ei = ei
-
-	return nil
-}
-
-func (f *Exchange) eiOutdated() bool {
-	return time.Since(time.Unix(f.ei.ServerTime, 0)) > time.Hour*24
-}
-
-func (f *Exchange) symbol(symbol string) (futures.Symbol, error) {
-	fetched := false
-
-	if f.eiOutdated() {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		if err := f.exchangeInfo(ctx); err != nil {
-			f.logger.Errorf("error updating exchange info: %v", err)
-		} else {
-			fetched = true
-		}
+		return futures.Symbol{}, err
 	}
 
 	for _, fsymbol := range f.ei.Symbols {
@@ -272,22 +235,64 @@ func (f *Exchange) symbol(symbol string) (futures.Symbol, error) {
 		}
 	}
 
-	// second chance, ei was loaded form file but the symbol might be new and require a reload
-	if !fetched {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		if err := f.exchangeInfo(ctx); err != nil {
-			return futures.Symbol{}, err
-		}
+	// ExchangeInfo was fresh yet such symbol was not found
+	if eiUpdated {
+		return futures.Symbol{}, fmt.Errorf("unknown symbol: %s", symbol)
+	}
 
-		for _, fsymbol := range f.ei.Symbols {
-			if fsymbol.Symbol == symbol {
-				return fsymbol, nil
-			}
+	// ExchangeInfo was not fresh, force reload and try finding symbol again
+	eiUpdated, err = f.info(ctx, true)
+	if err != nil {
+		return futures.Symbol{}, err
+	}
+
+	for _, fsymbol := range f.ei.Symbols {
+		if fsymbol.Symbol == symbol {
+			return fsymbol, nil
 		}
 	}
 
 	return futures.Symbol{}, fmt.Errorf("unknown symbol: %s", symbol)
+}
+
+// info tries to read the ei from file, if it doesn't exist or is outdated it attempts to fetch the ei
+func (f *Exchange) info(ctx context.Context, force bool) (updated bool, err error) {
+	// Load if not exists
+	ei, err := f.eier.Read(eiFileName)
+	if force || os.IsNotExist(err) {
+		ei, err = f.getExchangeInfo(ctx)
+		if err != nil {
+			return false, err
+		}
+
+		f.ei = ei
+
+		// Ignore save error
+		if err := f.eier.Save(eiFileName, ei); err != nil {
+			f.logger.Errorf("error saving exchange info: %v", err)
+		}
+		return true, nil
+	}
+
+	f.ei = ei
+
+	// Try to fetch the ei if it's outdated
+	if time.Since(time.Unix(ei.ServerTime, 0)) > maxEiAge {
+		ei, err = f.getExchangeInfo(ctx)
+		if err != nil {
+			f.logger.Errorf("error saving exchange info: %v", err)
+			return false, err
+		}
+
+		f.ei = ei
+
+		// Ignore save error
+		if err := f.eier.Save(eiFileName, ei); err != nil {
+			f.logger.Errorf("error saving exchange info: %v", err)
+		}
+	}
+
+	return true, nil
 }
 
 func pairToSymbol(p domain.Pair) string {
@@ -367,7 +372,7 @@ func toTakeProfitRequest(req outbound.CreateOrderRequest, symbol futures.Symbol)
 		side:         orderSide,
 		orderType:    orderType,
 		price:        req.TakeProfit.Price,
-		baseQuantity: req.Order.BaseQuantity * req.TakeProfit.QuentityPct,
+		baseQuantity: req.Order.BaseQuantity * req.TakeProfit.QuantityPct,
 		timeInForce:  orderTIF,
 	}, nil
 }
@@ -391,7 +396,7 @@ func toStopLossRequest(req outbound.CreateOrderRequest, symbol futures.Symbol) (
 		side:         orderSide,
 		orderType:    orderType,
 		price:        req.StopLoss.Price,
-		baseQuantity: req.Order.BaseQuantity * req.StopLoss.QuentityPct,
+		baseQuantity: req.Order.BaseQuantity * req.StopLoss.QuantityPct,
 		timeInForce:  orderTIF,
 	}, nil
 }
