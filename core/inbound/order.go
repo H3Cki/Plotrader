@@ -40,8 +40,8 @@ type CreateOrderRequest struct {
 	WaitNextInterval  bool   `json:"waitNextInterval"`
 
 	Order      OrderRequest `json:"order" validate:"required"`
-	TakeProfit *StopRequest `json:"takeProfitPlot"`
-	StopLoss   *StopRequest `json:"stopLossPlot"`
+	TakeProfit *StopRequest `json:"takeProfit"`
+	StopLoss   *StopRequest `json:"stopLoss"`
 }
 
 type OrderRequest struct {

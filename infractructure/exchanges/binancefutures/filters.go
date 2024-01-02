@@ -6,11 +6,43 @@ import (
 	"math"
 	"strconv"
 
-	"github.com/adshao/go-binance/v2/futures"
+	"github.com/H3Cki/go-binance/v2/futures"
 )
 
 var orderTypeFilters = map[futures.OrderType]func(*createOrderRequest) error{
 	futures.OrderTypeLimit: func(req *createOrderRequest) error {
+		s := req.symbol
+		// PRICE
+		if pf := s.PriceFilter(); pf != nil {
+			price, err := priceFilter(pf, req.price)
+			if err != nil {
+				return err
+			}
+
+			req.price = price
+		}
+
+		// LOT SIZE
+		if lsf := s.LotSizeFilter(); lsf != nil {
+			qty, err := lotSizeFilter(lsf, req.baseQuantity)
+			if err != nil {
+				return err
+			}
+
+			req.baseQuantity = qty
+		}
+
+		// MIN NOTIONAL
+		if mnf := s.MinNotionalFilter(); mnf != nil {
+			err := minNotionalFilter(mnf, req.price, req.baseQuantity)
+			if err != nil {
+				return err
+			}
+		}
+
+		return nil
+	},
+	futures.OrderTypeStopLoss: func(req *createOrderRequest) error {
 		s := req.symbol
 		// PRICE
 		if pf := s.PriceFilter(); pf != nil {

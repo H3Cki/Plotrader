@@ -5,7 +5,7 @@ import (
 	"math"
 	"testing"
 
-	"github.com/adshao/go-binance/v2/futures"
+	"github.com/H3Cki/go-binance/v2/futures"
 	"github.com/stretchr/testify/assert"
 )
 

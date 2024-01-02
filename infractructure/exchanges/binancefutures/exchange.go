@@ -10,7 +10,7 @@ import (
 
 	"github.com/H3Cki/Plotrader/core/domain"
 	"github.com/H3Cki/Plotrader/core/outbound"
-	"github.com/adshao/go-binance/v2/futures"
+	"github.com/H3Cki/go-binance/v2/futures"
 	"go.uber.org/zap"
 )
 
@@ -18,6 +18,13 @@ var (
 	eiFileName = "binancefutures_ei.json"
 	maxEiAge   = 24 * time.Hour
 )
+
+func eiFn() string {
+	if futures.UseTestnet {
+		return "testnet_" + eiFileName
+	}
+	return eiFileName
+}
 
 type UserConfig struct {
 	Testnet    bool   `json:"testnet"`
@@ -97,18 +104,30 @@ func (f *Exchange) CreateOrder(ctx context.Context, req outbound.CreateOrderRequ
 	orderReq, err := toOrderRequest(req, symbol)
 	if err != nil {
 		errs = append(errs, err)
+	} else {
+		if err := applyFilters(orderReq); err != nil {
+			errs = append(errs, err)
+		}
 	}
 
 	if req.TakeProfit != nil {
 		takeProfitReq, err = toTakeProfitRequest(req, symbol)
 		if err != nil {
 			errs = append(errs, err)
+		} else {
+			if err := applyFilters(takeProfitReq); err != nil {
+				errs = append(errs, err)
+			}
 		}
 	}
 	if req.StopLoss != nil {
 		stopLossReq, err = toStopLossRequest(req, symbol)
 		if err != nil {
 			errs = append(errs, err)
+		} else {
+			if err := applyFilters(stopLossReq); err != nil {
+				errs = append(errs, err)
+			}
 		}
 	}
 
@@ -116,81 +135,45 @@ func (f *Exchange) CreateOrder(ctx context.Context, req outbound.CreateOrderRequ
 		return domain.ExchangeOrders{}, errors.Join(errs...)
 	}
 
-	order, err := f.createOrder(ctx, orderReq)
-	if err != nil {
-		return domain.ExchangeOrders{}, err
-	}
+	orderSvc := f.client.NewCreateOrderService().
+		Symbol(orderReq.symbol.Symbol).
+		Side(orderReq.side).
+		Type(orderReq.orderType).
+		TimeInForce(orderReq.timeInForce).
+		Quantity(fmt.Sprint(orderReq.baseQuantity)).
+		Price(fmt.Sprint(orderReq.price))
 
-	var takeProfit *futures.CreateOrderResponse
+	orderBatch := []*futures.CreateOrderService{orderSvc}
+
 	if takeProfitReq != nil {
-		takeProfit, err = f.createOrder(ctx, takeProfitReq)
-		if err != nil {
-			if cancelErr := f.cancelOrder(ctx, cancelOrderRequest{
-				id:     order.OrderID,
-				symbol: order.Symbol,
-			}); cancelErr != nil {
-				return domain.ExchangeOrders{}, fmt.Errorf("%w: %s", err, cancelErr)
-			}
-
-			return domain.ExchangeOrders{}, err
-		}
+		//
 	}
 
-	stopLoss, err := f.createOrder(ctx, stopLossReq)
+	if stopLossReq != nil {
+		stopLossSvc := f.client.NewCreateOrderService().
+			Symbol(orderReq.symbol.Symbol).
+			Side(orderReq.side).
+			Type(orderReq.orderType).
+			TimeInForce(orderReq.timeInForce).
+			Quantity(fmt.Sprint(orderReq.baseQuantity)).
+			Price(fmt.Sprint(orderReq.price)).
+			TrailingDelta("1")
+
+		orderBatch = append(orderBatch, stopLossSvc)
+	}
+
+	batchRes, err := f.client.NewCreateBatchOrdersService().OrderList(orderBatch).Do(ctx)
 	if err != nil {
-		if cancelErr := f.cancelOrder(ctx, cancelOrderRequest{
-			id:     order.OrderID,
-			symbol: order.Symbol,
-		}); cancelErr != nil {
-			return domain.ExchangeOrders{}, fmt.Errorf("%w: %s", err, cancelErr)
-		}
-
-		if cancelTpErr := f.cancelOrder(ctx, cancelOrderRequest{
-			id:     takeProfit.OrderID,
-			symbol: takeProfit.Symbol,
-		}); cancelTpErr != nil {
-			return domain.ExchangeOrders{}, fmt.Errorf("%w: %s", err, cancelTpErr)
-		}
-
 		return domain.ExchangeOrders{}, err
 	}
 
-	exOrder, err := toExchangeOrder(order)
-	if err != nil {
-		f.logger.Errorf("error converting to ExchangeOrder: %w", err)
-	}
-
-	exTakeProfit, err := toExchangeOrder(takeProfit)
-	if err != nil {
-		f.logger.Errorf("error converting to ExchangeOrder: %w", err)
-	}
-
-	exStopLoss, err := toExchangeOrder(stopLoss)
-	if err != nil {
-		f.logger.Errorf("error converting to ExchangeOrder: %w", err)
-	}
+	f.logger.Info(batchRes)
 
 	return domain.ExchangeOrders{
-		Order:      exOrder,
-		TakeProfit: exTakeProfit,
-		StopLoss:   exStopLoss,
+		// Order:      exOrder,
+		// TakeProfit: exTakeProfit,
+		// StopLoss:   exStopLoss,
 	}, nil
-}
-
-func (f *Exchange) createOrder(ctx context.Context, req *createOrderRequest) (*futures.CreateOrderResponse, error) {
-	if err := applyFilters(req); err != nil {
-		return nil, err
-	}
-
-	createSvc := f.client.NewCreateOrderService().
-		Symbol(req.symbol.Symbol).
-		Side(req.side).
-		Type(req.orderType).
-		TimeInForce(req.timeInForce).
-		Quantity(fmt.Sprint(req.baseQuantity)).
-		Price(fmt.Sprint(req.price))
-
-	return createSvc.Do(ctx)
 }
 
 func (f *Exchange) CancelOrder(ctx context.Context, req outbound.CancelOrderRequest) error {
@@ -258,7 +241,7 @@ func (f *Exchange) symbol(ctx context.Context, symbol string) (futures.Symbol, e
 // info tries to read the ei from file, if it doesn't exist or is outdated it attempts to fetch the ei
 func (f *Exchange) info(ctx context.Context, force bool) (updated bool, err error) {
 	// Load if not exists
-	ei, err := f.eier.Read(eiFileName)
+	ei, err := f.eier.Read(eiFn())
 	if force || os.IsNotExist(err) {
 		ei, err = f.getExchangeInfo(ctx)
 		if err != nil {
@@ -268,7 +251,7 @@ func (f *Exchange) info(ctx context.Context, force bool) (updated bool, err erro
 		f.ei = ei
 
 		// Ignore save error
-		if err := f.eier.Save(eiFileName, ei); err != nil {
+		if err := f.eier.Save(eiFn(), ei); err != nil {
 			f.logger.Errorf("error saving exchange info: %v", err)
 		}
 		return true, nil
@@ -287,7 +270,7 @@ func (f *Exchange) info(ctx context.Context, force bool) (updated bool, err erro
 		f.ei = ei
 
 		// Ignore save error
-		if err := f.eier.Save(eiFileName, ei); err != nil {
+		if err := f.eier.Save(eiFn(), ei); err != nil {
 			f.logger.Errorf("error saving exchange info: %v", err)
 		}
 	}
@@ -314,9 +297,9 @@ func parseType(s domain.OrderType) (futures.OrderType, error) {
 	case domain.OrderTypeLimit:
 		return futures.OrderTypeLimit, nil
 	case domain.OrderTypeTakeProfit:
-		return futures.OrderTypeTakeProfitMarket, nil
+		return futures.OrderTypeTakeProfit, nil
 	case domain.OrderTypeStopLoss:
-		return futures.OrderTypeStopMarket, nil
+		return futures.OrderTypeStopLoss, nil
 	}
 	return "", fmt.Errorf("unexpected order type: %s", s)
 }
@@ -401,7 +384,12 @@ func toStopLossRequest(req outbound.CreateOrderRequest, symbol futures.Symbol) (
 	}, nil
 }
 
+// TODO nil
 func toExchangeOrder(resp *futures.CreateOrderResponse) (domain.ExchangeOrder, error) {
+	if resp == nil {
+		return domain.ExchangeOrder{}, nil
+	}
+
 	price, err := strconv.ParseFloat(resp.Price, 64)
 	if err != nil {
 		return domain.ExchangeOrder{}, err

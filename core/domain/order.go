@@ -34,6 +34,16 @@ var (
 	OrderStatusCanceled OrderStatus = "canceled"
 )
 
+func OppositeSide(side OrderSide) OrderSide {
+	switch side {
+	case OrderSideBuy:
+		return OrderSideSell
+	case OrderSideSell:
+		return OrderSideBuy
+	}
+	panic("unsupported order side")
+}
+
 type Order struct {
 	ID             string
 	Status         OrderStatus

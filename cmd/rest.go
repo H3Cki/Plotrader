@@ -25,6 +25,8 @@ var RESTCommand = &cli.Command{
 func runRESTCommand(ctx *cli.Context) error {
 	logger := ctx.App.Metadata["Logger"].(*zap.Logger)
 
+	logger.Info("Starting REST server")
+
 	appConfig := config.AppConfig{
 		AppName:    ctx.App.Name,
 		AppVersion: ctx.App.Version,
