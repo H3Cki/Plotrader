@@ -3,7 +3,7 @@ module github.com/H3Cki/Plotrader
 go 1.21.0
 
 require (
-	github.com/H3Cki/go-binance/v2 v2.2.0
+	github.com/H3Cki/go-binance/v2 v2.10.2
 	github.com/aws/aws-sdk-go-v2 v1.24.0
 	github.com/aws/aws-sdk-go-v2/config v1.26.2
 	github.com/aws/aws-sdk-go-v2/service/sns v1.26.6
@@ -46,3 +46,5 @@ require (
 	golang.org/x/text v0.8.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
+
+// replace github.com/adshao/go-binance/v2 => github.com/H3Cki/go-binance/v2 v2.0.0

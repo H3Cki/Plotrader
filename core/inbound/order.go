@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 
+	"github.com/H3Cki/Plotrader/core/domain"
 	"github.com/go-playground/validator/v10"
 )
 
@@ -31,30 +32,23 @@ type UpdaterService interface {
 }
 
 type CreateOrderRequest struct {
-	Exchange ExchangeConfig `json:"exchange" validate:"required"`
-	Symbol   string         `json:"symbol" validate:"required"`
-	Side     string         `json:"side" validate:"required"`
+	Exchange ExchangeConfig      `json:"exchange" validate:"required"`
+	Symbol   string              `json:"symbol" validate:"required"`
+	Side     domain.PositionSide `json:"side" validate:"required"`
+	Interval string              `json:"interval" validate:"required"`
 
-	Interval          string `json:"interval" validate:"required"`
-	DisableProtection bool   `json:"disableProtection"`
-	WaitNextInterval  bool   `json:"waitNextInterval"`
-
-	Order      OrderRequest `json:"order" validate:"required"`
-	TakeProfit *StopRequest `json:"takeProfit"`
-	StopLoss   *StopRequest `json:"stopLoss"`
+	Order       OrderRequest  `json:"order" validate:"required"`
+	TakeProfits []StopRequest `json:"takeProfits"`
+	StopLosses  []StopRequest `json:"stopLosses"`
 }
 
 type OrderRequest struct {
-	Type          string         `json:"type" validate:"required"`
-	TimeInForce   string         `json:"timeInForce" validate:"required"`
 	QuoteQuantity float64        `json:"quoteQuantity"`
 	BaseQuantity  float64        `json:"baseQuantity"`
 	Plot          map[string]any `json:"plot" validate:"required"`
 }
 
 type StopRequest struct {
-	Type        string         `json:"type" validate:"required"`
-	TimeInForce string         `json:"timeInForce" validate:"required"`
 	QuantityPct float64        `json:"quantityPct" alidate:"required"`
 	Plot        map[string]any `json:"plot" validate:"required"`
 }

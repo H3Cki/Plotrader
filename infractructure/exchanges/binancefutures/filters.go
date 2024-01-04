@@ -42,38 +42,41 @@ var orderTypeFilters = map[futures.OrderType]func(*createOrderRequest) error{
 
 		return nil
 	},
-	futures.OrderTypeStopLoss: func(req *createOrderRequest) error {
-		s := req.symbol
-		// PRICE
-		if pf := s.PriceFilter(); pf != nil {
-			price, err := priceFilter(pf, req.price)
-			if err != nil {
-				return err
-			}
+	futures.OrderTypeStopMarket:       marketOrderFilters,
+	futures.OrderTypeTakeProfitMarket: marketOrderFilters,
+}
 
-			req.price = price
+var marketOrderFilters = func(req *createOrderRequest) error {
+	s := req.symbol
+	// PRICE
+	if pf := s.PriceFilter(); pf != nil {
+		price, err := priceFilter(pf, req.price)
+		if err != nil {
+			return err
 		}
 
-		// LOT SIZE
-		if lsf := s.LotSizeFilter(); lsf != nil {
-			qty, err := lotSizeFilter(lsf, req.baseQuantity)
-			if err != nil {
-				return err
-			}
+		req.price = price
+	}
 
-			req.baseQuantity = qty
+	// MARKET LOT SIZE
+	if lsf := s.MarketLotSizeFilter(); lsf != nil {
+		qty, err := marketLotSizeFilter(lsf, req.baseQuantity)
+		if err != nil {
+			return err
 		}
 
-		// MIN NOTIONAL
-		if mnf := s.MinNotionalFilter(); mnf != nil {
-			err := minNotionalFilter(mnf, req.price, req.baseQuantity)
-			if err != nil {
-				return err
-			}
-		}
+		req.baseQuantity = qty
+	}
 
-		return nil
-	},
+	// MIN NOTIONAL
+	if mnf := s.MinNotionalFilter(); mnf != nil {
+		err := minNotionalFilter(mnf, req.price, req.baseQuantity)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 func applyFilters(or *createOrderRequest) error {
@@ -126,6 +129,37 @@ func priceFilter(pf *futures.PriceFilter, price float64) (float64, error) {
 }
 
 func lotSizeFilter(lsf *futures.LotSizeFilter, qty float64) (float64, error) {
+	stepSize, err := strconv.ParseFloat(lsf.StepSize, 64)
+	if err != nil {
+		return 0, err
+	}
+
+	decimals := stringDecimalPlacesExp(lsf.StepSize)
+	newQty := math.Floor(qty/stepSize) * stepSize
+	newQty = math.Round(newQty*decimals) / decimals
+
+	minQty, err := strconv.ParseFloat(lsf.MinQuantity, 64)
+	if err != nil {
+		return 0, err
+	}
+
+	if newQty < minQty {
+		return 0, errors.New("quantity too small")
+	}
+
+	maxQty, err := strconv.ParseFloat(lsf.MaxQuantity, 64)
+	if err != nil {
+		return 0, err
+	}
+
+	if newQty > maxQty {
+		return 0, errors.New("quantity too large")
+	}
+
+	return newQty, nil
+}
+
+func marketLotSizeFilter(lsf *futures.MarketLotSizeFilter, qty float64) (float64, error) {
 	stepSize, err := strconv.ParseFloat(lsf.StepSize, 64)
 	if err != nil {
 		return 0, err

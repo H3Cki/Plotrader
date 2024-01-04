@@ -59,59 +59,50 @@ func (s *Service) CreateOrder(ctx context.Context, req inbound.CreateOrderReques
 		return err
 	}
 
-	orderPlot, err := parsePlotMap(req.Order.Plot, !req.DisableProtection)
+	orderPlot, err := parsePlotMap(req.Order.Plot)
 	if err != nil {
 		return errors.Wrap(err, "error parsing price plot")
 	}
 
-	var takeProfit, stopLoss *domain.StopRequest
-	if req.TakeProfit != nil {
-		tp, err := parsePlotMap(req.TakeProfit.Plot, !req.DisableProtection)
+	var takeProfits, stopLosses []domain.TPSLOrder
+	for _, tp := range req.TakeProfits {
+		plot, err := parsePlotMap(tp.Plot)
 		if err != nil {
 			return errors.Wrap(err, "error parsing take profit plot")
 		}
-		takeProfit = &domain.StopRequest{
-			Type:        domain.OrderType(req.TakeProfit.Type),
-			TimeInForce: domain.TimeInForce(req.TakeProfit.TimeInForce),
-			QuantityPct: req.TakeProfit.QuantityPct,
-			Plot:        tp,
-		}
+		takeProfits = append(takeProfits, domain.TPSLOrder{
+			QuantityPct: tp.QuantityPct,
+			Plot:        plot,
+		})
 	}
-
-	if req.StopLoss != nil {
-		sl, err := parsePlotMap(req.StopLoss.Plot, !req.DisableProtection)
+	for _, sl := range req.StopLosses {
+		plot, err := parsePlotMap(sl.Plot)
 		if err != nil {
 			return errors.Wrap(err, "error parsing stop loss plot")
 		}
-		stopLoss = &domain.StopRequest{
-			Type:        domain.OrderType(req.StopLoss.Type),
-			TimeInForce: domain.TimeInForce(req.StopLoss.TimeInForce),
-			QuantityPct: req.StopLoss.QuantityPct,
-			Plot:        sl,
-		}
+		stopLosses = append(stopLosses, domain.TPSLOrder{
+			QuantityPct: sl.QuantityPct,
+			Plot:        plot,
+		})
 	}
 
-	order := &domain.Order{
+	order := &domain.Follow{
 		ID:       uuid.NewString(),
-		Status:   domain.OrderStatusPending,
 		Exchange: req.Exchange.Name,
-		Params: domain.OrderParams{
-			Pair:              pair,
-			Side:              domain.OrderSide(req.Side),
-			Interval:          interval,
-			DisableProtection: req.DisableProtection,
-			WaitNextInterval:  req.WaitNextInterval,
-			Order: domain.OrderRequest{
-				Type:          domain.OrderType(req.Order.Type),
-				TimeInForce:   domain.TimeInForce(req.Order.TimeInForce),
+
+		Pair:         pair,
+		PositionSide: domain.PositionSide(req.Side),
+		Interval:     interval,
+
+		Orders: domain.Orders{
+			Order: domain.Order{
 				QuoteQuantity: req.Order.QuoteQuantity,
 				BaseQuantity:  req.Order.BaseQuantity,
 				Plot:          orderPlot,
 			},
-			TakeProfit: takeProfit,
-			StopLoss:   stopLoss,
+			TakeProfits: takeProfits,
+			StopLosses:  stopLosses,
 		},
-		ExchangeOrders: []domain.ExchangeOrders{},
 	}
 
 	if err := validate.Struct(order); err != nil {

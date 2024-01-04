@@ -11,11 +11,5 @@ type Publisher interface {
 }
 
 type OrderUpdate struct {
-	domain.Order
-}
-
-type OrderRequest struct {
-	Type        domain.OrderType   `json:"type" validate:"required"`
-	TimeInForce domain.TimeInForce `json:"timeInForce" validate:"required"`
-	Plot        map[string]any     `json:"plot" validate:"required"`
+	domain.Follow
 }

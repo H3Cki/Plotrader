@@ -2,7 +2,6 @@ package updatersvc
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"slices"
 	"sync"
@@ -14,7 +13,7 @@ import (
 )
 
 type orderTicker struct {
-	order  *domain.Order
+	order  *domain.Follow
 	ticker *time.Ticker
 }
 
@@ -34,41 +33,47 @@ func newFollower(logger *zap.SugaredLogger, publisher outbound.Publisher) *updat
 	}
 }
 
-func (f *updater) createOrder(ctx context.Context, order *domain.Order, exchange outbound.Exchange) error {
-	eo, err := f.createExchangeOrder(order, exchange)
+func (f *updater) createOrder(ctx context.Context, follow *domain.Follow, exchange outbound.Exchange) error {
+	eos, err := f.createExchangeOrders(follow, exchange)
 	if err != nil {
 		return err
 	}
 
-	order.ExchangeOrders = append(order.ExchangeOrders, eo)
+	if err := applyEos(follow.Orders, eos); err != nil {
+		return err
+	}
 
 	if err := f.publisher.PublishOrderUpdate(ctx, outbound.OrderUpdate{
-		Order: *order,
+		Follow: *follow,
 	}); err != nil {
 		f.logger.Error(err)
 	}
 
-	fo := orderTicker{
-		order:  order,
-		ticker: time.NewTicker(order.Params.Interval),
-	}
-
-	f.addOrderTicker(fo)
-
 	go func() {
-		tick := <-time.After(time.Until(NextStartTime(time.Now(), order.Params.Interval)))
+		nextStart := NextStartTime(time.Now(), follow.Interval).Add(-500 * time.Millisecond) // some margin for standard delays
+		f.logger.Debugf("next interval: %s", nextStart.String())
+
+		tick := <-time.After(time.Until(nextStart))
+		ticker := time.NewTicker(follow.Interval)
+
+		fo := orderTicker{
+			order:  follow,
+			ticker: ticker,
+		}
+
+		f.addOrderTicker(fo)
+
 		for {
-			latest := order.ExchangeOrders[len(order.ExchangeOrders)-1]
-			eo, err = f.updatePrice(ctx, tick, order, exchange, latest)
+			f.logger.Debugf("updating order %v", fo.order)
+			eos, err = f.updatePrice(ctx, tick, follow.Orders, exchange)
 			if err != nil {
 				fo.ticker.Stop()
+				f.logger.Errorf("error updating order price %v", err)
 				return
 			}
 
-			order.ExchangeOrders = append(order.ExchangeOrders, eo)
-
 			if err := f.publisher.PublishOrderUpdate(ctx, outbound.OrderUpdate{
-				Order: *order,
+				Follow: *follow,
 			}); err != nil {
 				f.logger.Error(err)
 			}
@@ -79,34 +84,78 @@ func (f *updater) createOrder(ctx context.Context, order *domain.Order, exchange
 				break
 			}
 		}
-
 	}()
 
 	return nil
 }
 
-func (f *updater) updatePrice(ctx context.Context, t time.Time, req *domain.Order, exchange outbound.Exchange, eo domain.ExchangeOrders) (next domain.ExchangeOrders, err error) {
-	order, takeProfit, stopLoss, err := orderDetails(req, t)
+func applyEos(orders domain.Orders, eos outbound.ExchangeOrders) error {
+	if len(orders.TakeProfits) != len(eos.TakeProfits) {
+		return fmt.Errorf("take profits length mismatch: expected %d, got %d", len(orders.TakeProfits), len(eos.TakeProfits))
+	}
+	if len(orders.StopLosses) != len(eos.StopLosses) {
+		return fmt.Errorf("stop losses length mismatch: expected %d, got %d", len(orders.TakeProfits), len(eos.TakeProfits))
+	}
+	orders.Order.ExchangeOrder = eos.Order
+	for i := range orders.TakeProfits {
+		orders.TakeProfits[i].ExchangeOrder = eos.TakeProfits[i]
+	}
+	for i := range orders.StopLosses {
+		orders.StopLosses[i].ExchangeOrder = eos.StopLosses[i]
+	}
+	return nil
+}
+
+func (f *updater) updatePrice(ctx context.Context, t time.Time, orders domain.Orders, exchange outbound.Exchange) (outbound.ExchangeOrders, error) {
+	orderPrice, err := orders.Order.Plot.At(t)
 	if err != nil {
-		return domain.ExchangeOrders{}, err
+		return outbound.ExchangeOrders{}, err
+	}
+	orderMod := outbound.OrderModification{
+		ExchangeOrder: orders.Order.ExchangeOrder,
+		OrderDetails: outbound.OrderDetails{
+			BaseQuantity: baseQuantity(orderPrice, orders.Order.BaseQuantity, orders.Order.QuoteQuantity),
+			Price:        orderPrice,
+		},
 	}
 
-	if err := exchange.CancelOrder(ctx, outbound.CancelOrderRequest{
-		Pair:         req.Params.Pair,
-		OrderID:      eo.Order.ID,
-		TakeProfitID: eo.TakeProfit.ID,
-		StopLossID:   eo.StopLoss.ID,
-	}); err != nil {
-		return domain.ExchangeOrders{}, err
+	tpMods := []outbound.OrderModification{}
+	for _, tp := range orders.TakeProfits {
+		price, err := tp.Plot.At(t)
+		if err != nil {
+			return outbound.ExchangeOrders{}, err
+		}
+		tpMods = append(tpMods, outbound.OrderModification{
+			ExchangeOrder: tp.ExchangeOrder,
+			OrderDetails: outbound.OrderDetails{
+				BaseQuantity: tp.ExchangeOrder.BaseQuantity(),
+				StopPrice:    price,
+			},
+		})
 	}
 
-	return exchange.CreateOrder(context.Background(), outbound.CreateOrderRequest{
-		Pair:       req.Params.Pair,
-		Side:       req.Params.Side,
-		Order:      order,
-		TakeProfit: takeProfit,
-		StopLoss:   stopLoss,
-	})
+	slMods := []outbound.OrderModification{}
+	for _, sl := range orders.StopLosses {
+		price, err := sl.Plot.At(t)
+		if err != nil {
+			return outbound.ExchangeOrders{}, err
+		}
+		slMods = append(slMods, outbound.OrderModification{
+			ExchangeOrder: sl.ExchangeOrder,
+			OrderDetails: outbound.OrderDetails{
+				BaseQuantity: sl.ExchangeOrder.BaseQuantity(),
+				StopPrice:    price,
+			},
+		})
+	}
+
+	modReq := outbound.ModifyOrdersRequest{
+		Order:      orderMod,
+		TakeProfit: tpMods,
+		StopLoss:   slMods,
+	}
+
+	return exchange.ModifyOrders(ctx, modReq)
 }
 
 func (f *updater) cancelOrder(orderID string) error {
@@ -123,40 +172,16 @@ func (f *updater) cancelOrder(orderID string) error {
 	return domain.ErrOrderNotFound
 }
 
-func (f *updater) createExchangeOrder(req *domain.Order, exchange outbound.Exchange) (domain.ExchangeOrders, error) {
-	symbolPrice := 0.0
-	if !req.Params.DisableProtection {
-		sp, err := exchange.GetPrice(context.Background(), outbound.GetPriceRequest{Pair: req.Params.Pair})
-		if err != nil {
-			return domain.ExchangeOrders{}, fmt.Errorf("error getting symbol price: %v", err)
-		}
-
-		symbolPrice = sp
-	}
-
+func (f *updater) createExchangeOrders(req *domain.Follow, exchange outbound.Exchange) (outbound.ExchangeOrders, error) {
 	t := time.Now()
-
-	order, takeProfit, stopLoss, err := orderDetails(req, t)
+	order, takeProfit, stopLoss, err := ordersAt(req.Orders, t)
 	if err != nil {
-		return domain.ExchangeOrders{}, err
+		return outbound.ExchangeOrders{}, err
 	}
 
-	if !req.Params.DisableProtection {
-		switch req.Params.Side {
-		case domain.OrderSideBuy:
-			if symbolPrice < order.Price {
-				return domain.ExchangeOrders{}, errors.New("price protection: price exceeded")
-			}
-		case domain.OrderSideSell:
-			if symbolPrice > order.Price {
-				return domain.ExchangeOrders{}, errors.New("price protection: price exceeded")
-			}
-		}
-	}
-
-	return exchange.CreateOrder(context.Background(), outbound.CreateOrderRequest{
-		Pair:       req.Params.Pair,
-		Side:       req.Params.Side,
+	return exchange.CreateOrders(context.Background(), outbound.CreateOrdersRequest{
+		Pair:       req.Pair,
+		Side:       req.PositionSide,
 		Order:      order,
 		TakeProfit: takeProfit,
 		StopLoss:   stopLoss,
@@ -169,56 +194,41 @@ func (u *updater) addOrderTicker(ot orderTicker) {
 	u.orders = append(u.orders, ot)
 }
 
-func orderDetails(req *domain.Order, t time.Time) (orderDetails outbound.OrderDetails, takeProfit *outbound.StopDetails, stopLoss *outbound.StopDetails, err error) {
-	errs := []error{}
-
-	orderPrice, err := req.Params.Order.Plot.At(t)
+func ordersAt(req domain.Orders, t time.Time) (order outbound.OrderDetails, takeProfits []outbound.OrderDetails, stopLosses []outbound.OrderDetails, err error) {
+	orderPrice, err := req.Order.Plot.At(t)
 	if err != nil {
-		errs = append(errs, err)
+		return outbound.OrderDetails{}, []outbound.OrderDetails{}, []outbound.OrderDetails{}, err
 	}
-
-	orderDetails = outbound.OrderDetails{
-		Type:         req.Params.Order.Type,
-		TimeInForce:  req.Params.Order.TimeInForce,
-		BaseQuantity: baseQuantity(orderPrice, req.Params.Order.BaseQuantity, req.Params.Order.QuoteQuantity),
+	order = outbound.OrderDetails{
+		BaseQuantity: baseQuantity(orderPrice, req.Order.BaseQuantity, req.Order.QuoteQuantity),
 		Price:        orderPrice,
 	}
 
-	var tp, sl *outbound.StopDetails
+	var tps, sls []outbound.OrderDetails
 
-	if req.Params.TakeProfit != nil {
-		tpPrice, err := req.Params.TakeProfit.Plot.At(t)
+	for _, tp := range req.TakeProfits {
+		price, err := tp.Plot.At(t)
 		if err != nil {
-			errs = append(errs, err)
-		} else {
-			tp = &outbound.StopDetails{
-				Type:        req.Params.TakeProfit.Type,
-				TimeInForce: req.Params.TakeProfit.TimeInForce,
-				QuantityPct: req.Params.TakeProfit.QuantityPct,
-				Price:       tpPrice,
-			}
+			return outbound.OrderDetails{}, []outbound.OrderDetails{}, []outbound.OrderDetails{}, err
 		}
+		tps = append(tps, outbound.OrderDetails{
+			BaseQuantity: order.BaseQuantity * tp.QuantityPct,
+			StopPrice:    price,
+		})
 	}
 
-	if req.Params.StopLoss != nil {
-		slPrice, err := req.Params.StopLoss.Plot.At(t)
+	for _, sl := range req.StopLosses {
+		price, err := sl.Plot.At(t)
 		if err != nil {
-			errs = append(errs, err)
-		} else {
-			sl = &outbound.StopDetails{
-				Type:        req.Params.StopLoss.Type,
-				TimeInForce: req.Params.StopLoss.TimeInForce,
-				QuantityPct: req.Params.StopLoss.QuantityPct,
-				Price:       slPrice,
-			}
+			return outbound.OrderDetails{}, []outbound.OrderDetails{}, []outbound.OrderDetails{}, err
 		}
+		sls = append(sls, outbound.OrderDetails{
+			BaseQuantity: order.BaseQuantity * sl.QuantityPct,
+			StopPrice:    price,
+		})
 	}
 
-	if len(errs) > 0 {
-		return outbound.OrderDetails{}, nil, nil, errors.Join(errs...)
-	}
-
-	return orderDetails, tp, sl, nil
+	return order, tps, sls, nil
 }
 
 func baseQuantity(price, base, quote float64) float64 {

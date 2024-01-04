@@ -9,45 +9,53 @@ import (
 type Exchange interface {
 	Init(context.Context) error
 	GetPrice(context.Context, GetPriceRequest) (float64, error)
-	CreateOrder(context.Context, CreateOrderRequest) (domain.ExchangeOrders, error)
-	CancelOrder(context.Context, CancelOrderRequest) error
+	CreateOrders(context.Context, CreateOrdersRequest) (ExchangeOrders, error)
+	ModifyOrders(context.Context, ModifyOrdersRequest) (ExchangeOrders, error)
+	CancelOrders(context.Context, CancelOrdersRequest) error
 }
 
 type GetPriceRequest struct {
 	Pair domain.Pair
 }
 
-type CreateOrderRequest struct {
+type CreateOrdersRequest struct {
 	Pair       domain.Pair
-	Side       domain.OrderSide
+	Side       domain.PositionSide
 	Order      OrderDetails
-	TakeProfit *StopDetails
-	StopLoss   *StopDetails
+	TakeProfit []OrderDetails
+	StopLoss   []OrderDetails
 }
 
 type OrderDetails struct {
-	Type         domain.OrderType
-	TimeInForce  domain.TimeInForce
 	BaseQuantity float64
 	Price        float64
+	StopPrice    float64
 }
 
-type StopDetails struct {
-	Type        domain.OrderType
-	TimeInForce domain.TimeInForce
-	QuantityPct float64
-	Price       float64
+type ModifyOrdersRequest struct {
+	Order      OrderModification
+	TakeProfit []OrderModification
+	StopLoss   []OrderModification
 }
 
-type CancelOrderRequest struct {
-	Pair         domain.Pair
-	OrderID      string
-	TakeProfitID string
-	StopLossID   string
+type OrderModification struct {
+	ExchangeOrder domain.ExchangeOrder
+	OrderDetails
+}
+
+type CancelOrdersRequest struct {
+	ExchangeOrder      domain.ExchangeOrder
+	TPSLExchangeOrders []domain.ExchangeOrder
 }
 
 type ExchangeInfoer[T any] interface {
 	Exists(name string) bool
 	Save(name string, data T) error
 	Read(name string) (T, error)
+}
+
+type ExchangeOrders struct {
+	Order       domain.ExchangeOrder
+	TakeProfits []domain.ExchangeOrder
+	StopLosses  []domain.ExchangeOrder
 }

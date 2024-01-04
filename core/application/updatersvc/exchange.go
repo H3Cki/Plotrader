@@ -7,7 +7,6 @@ import (
 	"github.com/H3Cki/Plotrader/core/outbound"
 	"github.com/H3Cki/Plotrader/infractructure/eier"
 	"github.com/H3Cki/Plotrader/infractructure/exchanges/binancefutures"
-	"github.com/H3Cki/Plotrader/infractructure/exchanges/noop"
 	"go.uber.org/zap"
 )
 
@@ -31,13 +30,6 @@ func parseExchange(logger *zap.SugaredLogger, ex inbound.ExchangeConfig) (outbou
 			UserConfig:     ucfg,
 		}
 		return binancefutures.New(logger, cfg), nil
-	case "noop":
-		e := &noop.Exchange{}
-		if err := ex.MarshalConfig(&e); err != nil {
-			return nil, err
-		}
-		return e, nil
 	}
-
 	return nil, fmt.Errorf("unknown exchange: %s", ex.Name)
 }

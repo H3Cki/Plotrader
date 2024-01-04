@@ -21,8 +21,8 @@ func New(logger *zap.SugaredLogger) *Publisher {
 }
 
 func (p *Publisher) PublishOrderUpdate(ctx context.Context, update outbound.OrderUpdate) error {
-	if update.Params.WebhookURL == "" {
-		p.logger.Debug("webhook URL not specified for update %+v", update)
+	if update.WebhookURL == "" {
+		//p.logger.Debug("webhook URL not specified for update %+v", update)
 		return nil
 	}
 
@@ -31,7 +31,7 @@ func (p *Publisher) PublishOrderUpdate(ctx context.Context, update outbound.Orde
 		return errors.Wrap(err, "error marshalling message")
 	}
 
-	res, err := http.Post(update.Params.WebhookURL, "application/json", bytes.NewBuffer(msgBytes))
+	res, err := http.Post(update.WebhookURL, "application/json", bytes.NewBuffer(msgBytes))
 	if err != nil {
 		return err
 	}
