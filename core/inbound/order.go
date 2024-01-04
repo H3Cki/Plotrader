@@ -26,12 +26,12 @@ const (
 	ActionCancelOrder Action = "cancel"
 )
 
-type UpdaterService interface {
-	CreateOrder(context.Context, CreateOrderRequest) error
-	CancelOrder(context.Context, CancelOrderRequest) error
+type FollowerService interface {
+	StartFollow(context.Context, CreateFollowRequest) error
+	StopFollow(context.Context, CancelFollowRequest) error
 }
 
-type CreateOrderRequest struct {
+type CreateFollowRequest struct {
 	Exchange ExchangeConfig      `json:"exchange" validate:"required"`
 	Symbol   string              `json:"symbol" validate:"required"`
 	Side     domain.PositionSide `json:"side" validate:"required"`
@@ -40,6 +40,8 @@ type CreateOrderRequest struct {
 	Order       OrderRequest  `json:"order" validate:"required"`
 	TakeProfits []StopRequest `json:"takeProfits"`
 	StopLosses  []StopRequest `json:"stopLosses"`
+
+	Webhook string `json:"webhook"`
 }
 
 type OrderRequest struct {
@@ -68,6 +70,6 @@ func (e *ExchangeConfig) MarshalConfig(to any) error {
 	return json.Unmarshal(bytes, to)
 }
 
-type CancelOrderRequest struct {
-	OrderID string
+type CancelFollowRequest struct {
+	FollowID string
 }

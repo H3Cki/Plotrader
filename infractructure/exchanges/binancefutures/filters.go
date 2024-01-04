@@ -9,8 +9,8 @@ import (
 	"github.com/H3Cki/go-binance/v2/futures"
 )
 
-var orderTypeFilters = map[futures.OrderType]func(*createOrderRequest) error{
-	futures.OrderTypeLimit: func(req *createOrderRequest) error {
+var orderTypeFilters = map[futures.OrderType]func(*orderValues) error{
+	futures.OrderTypeLimit: func(req *orderValues) error {
 		s := req.symbol
 		// PRICE
 		if pf := s.PriceFilter(); pf != nil {
@@ -46,7 +46,7 @@ var orderTypeFilters = map[futures.OrderType]func(*createOrderRequest) error{
 	futures.OrderTypeTakeProfitMarket: marketOrderFilters,
 }
 
-var marketOrderFilters = func(req *createOrderRequest) error {
+var marketOrderFilters = func(req *orderValues) error {
 	s := req.symbol
 	// PRICE
 	if pf := s.PriceFilter(); pf != nil {
@@ -79,7 +79,7 @@ var marketOrderFilters = func(req *createOrderRequest) error {
 	return nil
 }
 
-func applyFilters(or *createOrderRequest) error {
+func applyFilters(or *orderValues) error {
 	filterFunc, ok := orderTypeFilters[futures.OrderType(or.orderType)]
 	if !ok {
 		return fmt.Errorf("unsupported order type: %v", or.orderType)

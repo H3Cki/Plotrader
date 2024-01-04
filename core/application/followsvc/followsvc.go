@@ -1,4 +1,4 @@
-package updatersvc
+package followsvc
 
 import (
 	"context"
@@ -23,7 +23,7 @@ type Config struct {
 
 type Service struct {
 	logger  *zap.SugaredLogger
-	updater *updater
+	updater *follower
 }
 
 func New(cfg Config) *Service {
@@ -33,7 +33,7 @@ func New(cfg Config) *Service {
 	}
 }
 
-func (s *Service) CreateOrder(ctx context.Context, req inbound.CreateOrderRequest) error {
+func (s *Service) StartFollow(ctx context.Context, req inbound.CreateFollowRequest) error {
 	s.logger.Debug("creating order")
 
 	if err := validate.Struct(req); err != nil {
@@ -86,7 +86,7 @@ func (s *Service) CreateOrder(ctx context.Context, req inbound.CreateOrderReques
 		})
 	}
 
-	order := &domain.Follow{
+	follow := &domain.Follow{
 		ID:       uuid.NewString(),
 		Exchange: req.Exchange.Name,
 
@@ -103,17 +103,19 @@ func (s *Service) CreateOrder(ctx context.Context, req inbound.CreateOrderReques
 			TakeProfits: takeProfits,
 			StopLosses:  stopLosses,
 		},
+
+		WebhookURL: req.Webhook,
 	}
 
-	if err := validate.Struct(order); err != nil {
+	if err := validate.Struct(follow); err != nil {
 		return err
 	}
 
-	return s.updater.createOrder(ctx, order, exchange)
+	return s.updater.startFollow(ctx, follow, exchange)
 }
 
-func (s *Service) CancelOrder(ctx context.Context, req inbound.CancelOrderRequest) error {
-	return s.updater.cancelOrder(req.OrderID)
+func (s *Service) StopFollow(ctx context.Context, req inbound.CancelFollowRequest) error {
+	return s.updater.stopFollow(req.FollowID)
 }
 
 var predefinedDurations = map[string]time.Duration{

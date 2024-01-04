@@ -8,7 +8,7 @@ import (
 	"github.com/H3Cki/Plotrader/core/inbound"
 )
 
-func New(svc inbound.UpdaterService, addr string) http.Server {
+func New(svc inbound.FollowerService, addr string) http.Server {
 	return http.Server{
 		Addr:    addr,
 		Handler: &handler{svc: svc},
@@ -16,13 +16,13 @@ func New(svc inbound.UpdaterService, addr string) http.Server {
 }
 
 type handler struct {
-	svc inbound.UpdaterService
+	svc inbound.FollowerService
 }
 
 func (h *handler) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodPost:
-		req := inbound.CreateOrderRequest{}
+		req := inbound.CreateFollowRequest{}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			rw.WriteHeader(http.StatusInternalServerError)
 			rw.Write([]byte(err.Error()))
@@ -31,7 +31,7 @@ func (h *handler) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 
 		ctx := context.Background()
 
-		if err := h.svc.CreateOrder(ctx, req); err != nil {
+		if err := h.svc.StartFollow(ctx, req); err != nil {
 			rw.WriteHeader(http.StatusBadRequest)
 			rw.Write([]byte(err.Error()))
 		}

@@ -1,10 +1,10 @@
-package updatersvc_test
+package followsvc_test
 
 import (
 	"testing"
 	"time"
 
-	"github.com/H3Cki/Plotrader/core/application/updatersvc"
+	"github.com/H3Cki/Plotrader/core/application/followsvc"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -31,7 +31,7 @@ func TestNextStart(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.now.String()+test.itv.String(), func(t *testing.T) {
-			next := updatersvc.NextStartTime(test.now, test.itv)
+			next := followsvc.NextStartTime(test.now, test.itv)
 			assert.Equal(t, test.next, next)
 		})
 	}
@@ -58,7 +58,7 @@ func TestStart(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.now.String()+test.itv.String(), func(t *testing.T) {
-			next := updatersvc.StartTime(test.now, test.itv)
+			next := followsvc.StartTime(test.now, test.itv)
 			assert.Equal(t, test.start, next)
 		})
 	}

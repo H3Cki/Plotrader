@@ -16,8 +16,8 @@ import (
 type Action string
 
 const (
-	ActionCreateOrder Action = "create"
-	ActionCancelOrder Action = "cancel"
+	ActionCreateFollow Action = "create"
+	ActionCancelFollow Action = "cancel"
 )
 
 type orderRequestMessage struct {
@@ -27,14 +27,14 @@ type orderRequestMessage struct {
 
 type Config struct {
 	Logger     *zap.SugaredLogger
-	UpdaterSvc inbound.UpdaterService
+	UpdaterSvc inbound.FollowerService
 	SQSConfig  config.Config
 	QueueURL   string
 }
 
 type Consumer struct {
 	logger     *zap.SugaredLogger
-	updaterSvc inbound.UpdaterService
+	updaterSvc inbound.FollowerService
 	client     *sqs.Client
 	queueURL   string
 }
@@ -80,8 +80,8 @@ func (c *Consumer) processMessage(ctx context.Context, sqsMsg types.Message) err
 	}
 
 	switch reqMsg.Action {
-	case ActionCreateOrder:
-		req := inbound.CreateOrderRequest{}
+	case ActionCreateFollow:
+		req := inbound.CreateFollowRequest{}
 		msgReqBytes, err := json.Marshal(reqMsg.Request)
 		if err != nil {
 			return err
@@ -89,12 +89,12 @@ func (c *Consumer) processMessage(ctx context.Context, sqsMsg types.Message) err
 		if err := json.Unmarshal(msgReqBytes, &req); err != nil {
 			return err
 		}
-		if err := c.updaterSvc.CreateOrder(ctx, req); err != nil {
+		if err := c.updaterSvc.StartFollow(ctx, req); err != nil {
 			return err
 		}
 		return nil
-	case ActionCancelOrder:
-		req := inbound.CancelOrderRequest{}
+	case ActionCancelFollow:
+		req := inbound.CancelFollowRequest{}
 		msgReqBytes, err := json.Marshal(reqMsg.Request)
 		if err != nil {
 			return err
@@ -102,7 +102,7 @@ func (c *Consumer) processMessage(ctx context.Context, sqsMsg types.Message) err
 		if err := json.Unmarshal(msgReqBytes, &req); err != nil {
 			return err
 		}
-		if err := c.updaterSvc.CancelOrder(ctx, req); err != nil {
+		if err := c.updaterSvc.StopFollow(ctx, req); err != nil {
 			return err
 		}
 		return nil

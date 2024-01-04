@@ -2,14 +2,14 @@ package inboundcfg
 
 import (
 	"github.com/H3Cki/Plotrader/config"
-	"github.com/H3Cki/Plotrader/core/application/updatersvc"
+	"github.com/H3Cki/Plotrader/core/application/followsvc"
 	"github.com/H3Cki/Plotrader/presentation/rest"
 	"github.com/H3Cki/Plotrader/presentation/sqsconsumer"
 	awsConfig "github.com/aws/aws-sdk-go-v2/config"
 )
 
 func WithUpdaterService(app *config.App) error {
-	app.UpdaterService = updatersvc.New(updatersvc.Config{
+	app.UpdaterService = followsvc.New(followsvc.Config{
 		Logger:     app.Logger,
 		Pubblisher: app.Publisher,
 	})

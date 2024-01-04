@@ -1,5 +1,5 @@
-github.com/H3Cki/go-binance/v2 v2.10.2 h1:zeWX2C0NpGAR3sang7ZvmlQg7xSRbdOhflaclEcbQZA=
-github.com/H3Cki/go-binance/v2 v2.10.2/go.mod h1:vhT2iEak1O8g6Z4ztr8PMFtysi8mA4B75K3Ols+mH00=
+github.com/H3Cki/go-binance/v2 v2.10.4 h1:BuoAS/gA3fg/mjL3AGJicBvtH9yQaaxD4QcgZy7aBUA=
+github.com/H3Cki/go-binance/v2 v2.10.4/go.mod h1:vhT2iEak1O8g6Z4ztr8PMFtysi8mA4B75K3Ols+mH00=
 github.com/aws/aws-sdk-go-v2 v1.24.0 h1:890+mqQ+hTpNuw0gGP6/4akolQkSToDJgHfQE7AwGuk=
 github.com/aws/aws-sdk-go-v2 v1.24.0/go.mod h1:LNh45Br1YAkEKaAqvmE1m8FUx6a5b/V0oAKV7of29b4=
 github.com/aws/aws-sdk-go-v2/config v1.26.2 h1:+RWLEIWQIGgrz2pBPAUoGgNGs1TOyF4Hml7hCnYj2jc=

@@ -23,7 +23,7 @@ func New(cfg awsCfg.Config, queueURL string) *Publisher {
 	}
 }
 
-func (p *Publisher) PublishOrderUpdate(ctx context.Context, req outbound.OrderUpdate) error {
+func (p *Publisher) PublishFollowUpdate(ctx context.Context, req outbound.FollowUpdate) error {
 	msgBytes, err := json.Marshal(req)
 	if err != nil {
 		return errors.Wrap(err, "error marshalling message")

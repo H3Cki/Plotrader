@@ -50,9 +50,19 @@ type TPSLOrder struct {
 	Plot          geometry.Plot `json:"plot" validate:"required"`
 }
 
+type ExchangeOrderStatus string
+
+var (
+	ExchangeOrderStatusOpen            ExchangeOrderStatus = "OPEN"
+	ExchangeOrderStatusFilled          ExchangeOrderStatus = "FILLED"
+	ExchangeOrderStatusPartiallyFilled ExchangeOrderStatus = "PARTIALLY_FILLED"
+	ExchangeOrerStatusCanceled         ExchangeOrderStatus = "CANCELED"
+)
+
 type ExchangeOrder interface {
+	Status() ExchangeOrderStatus
+	CreatedAt() time.Time
 	Price() float64
 	StopPrice() float64
 	BaseQuantity() float64
-	Error() error
 }

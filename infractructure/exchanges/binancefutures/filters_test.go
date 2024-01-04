@@ -88,19 +88,19 @@ func Test_applyFuturesFilters(t *testing.T) {
 
 	type args struct {
 		s futures.Symbol
-		o createOrderRequest
+		o orderValues
 	}
 
 	tests := []struct {
 		name    string
 		args    args
 		wantErr bool
-		exRes   createOrderRequest
+		exRes   orderValues
 	}{
 		{
 			name: "1",
 			args: args{
-				o: createOrderRequest{
+				o: orderValues{
 					symbol:       symbolfETHBTC,
 					orderType:    futures.OrderTypeLimit,
 					price:        0.12345678912345,
@@ -108,7 +108,7 @@ func Test_applyFuturesFilters(t *testing.T) {
 				},
 			},
 			wantErr: false,
-			exRes: createOrderRequest{
+			exRes: orderValues{
 				orderType:    futures.OrderTypeLimit,
 				price:        0.123457,
 				baseQuantity: 0.21,
@@ -117,7 +117,7 @@ func Test_applyFuturesFilters(t *testing.T) {
 		{
 			name: "quantity too small",
 			args: args{
-				o: createOrderRequest{
+				o: orderValues{
 					symbol:       symbolfETHBTC,
 					orderType:    futures.OrderTypeLimit,
 					price:        0.078794,
@@ -125,7 +125,7 @@ func Test_applyFuturesFilters(t *testing.T) {
 				},
 			},
 			wantErr: true,
-			exRes: createOrderRequest{
+			exRes: orderValues{
 				orderType:    futures.OrderTypeLimit,
 				price:        0.078794,
 				baseQuantity: 0.0001,
@@ -134,7 +134,7 @@ func Test_applyFuturesFilters(t *testing.T) {
 		{
 			name: "quantity too big",
 			args: args{
-				o: createOrderRequest{
+				o: orderValues{
 					symbol:       symbolfETHBTC,
 					orderType:    futures.OrderTypeLimit,
 					price:        0.078794,
@@ -142,7 +142,7 @@ func Test_applyFuturesFilters(t *testing.T) {
 				},
 			},
 			wantErr: true,
-			exRes: createOrderRequest{
+			exRes: orderValues{
 				orderType:    futures.OrderTypeLimit,
 				price:        0.078794,
 				baseQuantity: 100000.0,

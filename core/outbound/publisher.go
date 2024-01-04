@@ -7,9 +7,9 @@ import (
 )
 
 type Publisher interface {
-	PublishOrderUpdate(context.Context, OrderUpdate) error
+	PublishFollowUpdate(context.Context, FollowUpdate) error
 }
 
-type OrderUpdate struct {
+type FollowUpdate struct {
 	domain.Follow
 }

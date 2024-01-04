@@ -1,4 +1,4 @@
-package updatersvc
+package followsvc
 
 import "time"
 

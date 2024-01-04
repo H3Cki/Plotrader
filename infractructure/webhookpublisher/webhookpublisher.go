@@ -20,7 +20,7 @@ func New(logger *zap.SugaredLogger) *Publisher {
 	return &Publisher{logger: logger}
 }
 
-func (p *Publisher) PublishOrderUpdate(ctx context.Context, update outbound.OrderUpdate) error {
+func (p *Publisher) PublishFollowUpdate(ctx context.Context, update outbound.FollowUpdate) error {
 	if update.WebhookURL == "" {
 		//p.logger.Debug("webhook URL not specified for update %+v", update)
 		return nil

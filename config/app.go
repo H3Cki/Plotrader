@@ -14,7 +14,7 @@ type App struct {
 	Logger *zap.SugaredLogger
 
 	// application
-	UpdaterService inbound.UpdaterService
+	UpdaterService inbound.FollowerService
 
 	// infrastructure
 	Publisher outbound.Publisher
