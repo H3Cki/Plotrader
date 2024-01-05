@@ -31,7 +31,7 @@ func TestNextStart(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.now.String()+test.itv.String(), func(t *testing.T) {
-			next := followsvc.NextStartTime(test.now, test.itv)
+			next := followsvc.NextIntervalStart(test.now, test.itv)
 			assert.Equal(t, test.next, next)
 		})
 	}
@@ -58,7 +58,7 @@ func TestStart(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.now.String()+test.itv.String(), func(t *testing.T) {
-			next := followsvc.StartTime(test.now, test.itv)
+			next := followsvc.IntervalStart(test.now, test.itv)
 			assert.Equal(t, test.start, next)
 		})
 	}

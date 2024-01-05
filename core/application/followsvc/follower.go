@@ -2,351 +2,346 @@ package followsvc
 
 import (
 	"context"
-	"slices"
+	"errors"
+	"fmt"
 	"sync"
 	"time"
 
 	"github.com/H3Cki/Plotrader/core/domain"
 	"github.com/H3Cki/Plotrader/core/outbound"
 	"go.uber.org/zap"
+	"golang.org/x/sync/errgroup"
 )
 
-type worker struct {
-	logger   *zap.SugaredLogger
-	exchange outbound.Exchange
-	follow   *domain.Follow
+type follower struct {
+	logger    *zap.SugaredLogger
+	publisher outbound.Publisher
+	loops     map[string]*intervalLoop
+	mu        sync.Mutex
 }
 
-func (f *worker) createExchangeOrders(ctx context.Context, t time.Time) (*domain.Follow, error) {
-	orders := f.follow.Orders
-
-	createdOrder, err := f.createOrder(ctx, t)
-	if err != nil {
-		return nil, err
+func newFollower(logger *zap.SugaredLogger, publisher outbound.Publisher) *follower {
+	return &follower{
+		logger:    logger,
+		publisher: publisher,
+		loops:     map[string]*intervalLoop{},
 	}
-	orders.Order = createdOrder
-
-	for i, tp := range orders.TakeProfits {
-		createdTP, err := f.createTP(ctx, t, tp, createdOrder.ExchangeOrder)
-		if err != nil {
-			return nil, err
-		}
-		orders.TakeProfits[i] = createdTP
-	}
-
-	for i, sl := range orders.StopLosses {
-		createdSL, err := f.createSL(ctx, t, sl, createdOrder.ExchangeOrder)
-		if err != nil {
-			return nil, err
-		}
-		orders.StopLosses[i] = createdSL
-	}
-
-	f.follow.Orders = orders
-
-	return f.follow, nil
 }
 
-func (w *worker) createOrder(ctx context.Context, t time.Time) (domain.Order, error) {
-	order := w.follow.Orders.Order
+func (f *follower) newIntervalLoop(id string, itv, headstart time.Duration) *intervalLoop {
+	loop := newIntervalLoop(f.logger, itv, headstart)
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.loops[id] = loop
+	return loop
+}
 
-	price, err := order.Plot.At(t)
-	if err != nil {
-		return domain.Order{}, err
+func (f *follower) startFollow(ctx context.Context, follow domain.Follow, exchange outbound.Exchange) (err error) {
+	fm := newManager(&follow)
+
+	if err := f.createOrders(ctx, fm, exchange); err != nil {
+		return err
 	}
 
-	eo, err := w.exchange.CreateOrder(ctx, outbound.CreateOrderRequest{
-		Pair: w.follow.Pair,
-		Side: w.follow.PositionSide,
+	loop := f.newIntervalLoop(follow.ID, follow.Interval, 500*time.Millisecond)
+	go func() {
+		loop.loop(func(tick time.Time) error {
+			return f.handleTick(ctx, tick, fm, exchange)
+		})
+	}()
+
+	return nil
+}
+
+func (f *follower) handleTick(ctx context.Context, tick time.Time, fm *followManager, ex outbound.Exchange) error {
+	uCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+
+	defer func() {
+		f.publishFollowUpdate(ctx, fm.follow())
+	}()
+
+	err := f.updateOrders(uCtx, tick, fm, ex)
+
+	if err != nil {
+		if cErr := f.cancelOrders(ctx, fm, ex); cErr != nil {
+			err = fmt.Errorf("%w : %w", err, cErr)
+		}
+	}
+
+	return err
+}
+
+func (f *follower) cancelOrders(ctx context.Context, fm *followManager, ex outbound.Exchange) error {
+	eos := []domain.ExchangeOrder{fm.getOrder().ExchangeOrder}
+	for _, tp := range fm.getTPs() {
+		eos = append(eos, tp.ExchangeOrder)
+	}
+	for _, sl := range fm.getSLs() {
+		eos = append(eos, sl.ExchangeOrder)
+	}
+	errs := []error{}
+	for _, eo := range eos {
+		errs = append(errs, ex.CancelOrder(ctx, eo))
+	}
+	return errors.Join(errs...)
+}
+
+func (f *follower) createOrders(ctx context.Context, fm *followManager, ex outbound.Exchange) error {
+	follow := fm.follow()
+	itvStart := IntervalStart(time.Now(), follow.Interval)
+
+	if err := f.createParentOrder(ctx, itvStart, fm, ex); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (f *follower) createParentOrder(ctx context.Context, t time.Time, fm *followManager, ex outbound.Exchange) error {
+	follow := fm.follow()
+	price, err := follow.Order.Plot.At(t)
+	if err != nil {
+		return err
+	}
+
+	eo, err := ex.CreateOrder(ctx, outbound.CreateOrderRequest{
+		Pair:    follow.Pair,
+		PosSide: follow.PositionSide,
+		Request: outbound.OrderRequest{
+			BaseQuantity: baseQuantity(price, follow.Order.BaseQuantity, follow.Order.QuoteQuantity),
+			Price:        price,
+		},
+	})
+	if err != nil {
+		return err
+	}
+
+	fm.updateOrder(withOrderEo(eo), withOrderStatus(domain.EoStatusToOrderStatus(eo.Status())))
+	return nil
+}
+
+func (f *follower) updateOrders(ctx context.Context, tick time.Time, fm *followManager, ex outbound.Exchange) error {
+	err := f.modifyParentOrder(ctx, tick, fm, ex)
+	if err != nil {
+		return err
+	}
+
+	return f.modifyStops(ctx, tick, fm, ex)
+}
+
+var errOrderFinished = errors.New("order finished")
+
+func (f *follower) modifyParentOrder(ctx context.Context, tick time.Time, fm *followManager, ex outbound.Exchange) error {
+	order := fm.getOrder()
+
+	switch fm.getOrder().Status {
+	case domain.OrderStatusActive, domain.OrderStatusCanceled, domain.OrderStatusError:
+		return errOrderFinished
+	}
+
+	eo, err := ex.GetOrder(ctx, order.ExchangeOrder)
+	if err != nil {
+		return err
+	}
+
+	status := domain.EoStatusToOrderStatus(eo.Status())
+	fm.updateOrder(withOrderEo(eo), withOrderStatus(status))
+
+	switch status {
+	case domain.OrderStatusActive, domain.OrderStatusCanceled, domain.OrderStatusError:
+		return errOrderFinished
+	}
+
+	price, err := order.Plot.At(tick)
+	if err != nil {
+		return err
+	}
+
+	eo, err = ex.ModifyOrder(ctx, outbound.ModifyOrderRequest{
+		ExchangeOrder: eo,
 		Request: outbound.OrderRequest{
 			BaseQuantity: baseQuantity(price, order.BaseQuantity, order.QuoteQuantity),
 			Price:        price,
 		},
 	})
 	if err != nil {
-		return domain.Order{}, err
+		return err
 	}
-	order.ExchangeOrder = eo
-	w.follow.Orders.Order = order
-	return order, nil
+
+	status = domain.EoStatusToOrderStatus(eo.Status())
+	fm.updateOrder(withOrderEo(eo), withOrderStatus(status))
+	return nil
 }
 
-func (w *worker) createTP(ctx context.Context, t time.Time, tp domain.TPSLOrder, parent domain.ExchangeOrder) (domain.TPSLOrder, error) {
-	price, err := tp.Plot.At(t)
-	if err != nil {
-		return domain.TPSLOrder{}, err
-	}
-
-	eo, err := w.exchange.CreateTakeProfitOrder(ctx, outbound.CreateTakeProfitRequest{
-		Parent: parent,
-		Request: outbound.TakeProfitRequest{
-			BaseQuantity: parent.BaseQuantity() * tp.QuantityPct,
-			StopPrice:    price,
-		},
+func (f *follower) modifyStops(ctx context.Context, tick time.Time, fm *followManager, ex outbound.Exchange) error {
+	eg := errgroup.Group{}
+	eg.Go(func() error {
+		return f.modifySLs(ctx, tick, fm, ex)
 	})
-	if err != nil {
-		return domain.TPSLOrder{}, err
-	}
-
-	tp.ExchangeOrder = eo
-	return tp, nil
-}
-
-func (w *worker) createSL(ctx context.Context, t time.Time, sl domain.TPSLOrder, parent domain.ExchangeOrder) (domain.TPSLOrder, error) {
-	price, err := sl.Plot.At(t)
-	if err != nil {
-		return domain.TPSLOrder{}, err
-	}
-
-	eo, err := w.exchange.CreateStopLossOrder(ctx, outbound.CreateStopLossRequest{
-		Parent: parent,
-		Request: outbound.StopLossRequest{
-			BaseQuantity: parent.BaseQuantity() * sl.QuantityPct,
-			StopPrice:    price,
-		},
+	eg.Go(func() error {
+		return f.modifyTPs(ctx, tick, fm, ex)
 	})
-	if err != nil {
-		return domain.TPSLOrder{}, err
-	}
-
-	sl.ExchangeOrder = eo
-	return sl, nil
+	return eg.Wait()
 }
 
-func (f *worker) updateOrder(ctx context.Context, t time.Time, order domain.Order) (domain.Order, error) {
-	if err := f.refreshOrder(ctx, &order); err != nil {
-		f.logger.Errorf("error refreshing order %v: %v", order, err)
+func (f *follower) modifyTPs(ctx context.Context, tick time.Time, fm *followManager, ex outbound.Exchange) error {
+	eg := errgroup.Group{}
+	for i, tp := range fm.getTPs() {
+		func(idx int, tp domain.StopOrder) {
+			eg.Go(func() error {
+				return f.modifyTP(ctx, tick, fm, ex, i, tp)
+			})
+		}(i, tp)
 	}
-
-	if order.ExchangeOrder.Status() != domain.ExchangeOrderStatusOpen {
-		return order, nil
-	}
-
-	price, err := order.Plot.At(t)
-	if err != nil {
-		return domain.Order{}, err
-	}
-
-	eo, err := f.exchange.ModifyOrder(ctx, outbound.ModifyOrderRequest{
-		ExchangeOrder: order.ExchangeOrder,
-		Request: outbound.OrderRequest{
-			BaseQuantity: order.ExchangeOrder.BaseQuantity(),
-			Price:        price,
-		},
-	})
-	if err != nil {
-		return domain.Order{}, err
-	}
-
-	order.ExchangeOrder = eo
-
-	return order, nil
+	return eg.Wait()
 }
 
-func (f *worker) updateTP(ctx context.Context, t time.Time, tp domain.TPSLOrder, parent domain.ExchangeOrder) (domain.TPSLOrder, error) {
-	price, err := tp.Plot.At(t)
-	if err != nil {
-		return domain.TPSLOrder{}, err
+func (f *follower) modifyTP(ctx context.Context, tick time.Time, fm *followManager, ex outbound.Exchange, idx int, tp domain.StopOrder) error {
+	switch tp.Status {
+	case domain.StopStatusCanceled, domain.StopStatusDone, domain.StopStatusError:
+		return errOrderFinished
 	}
 
-	eo, err := f.exchange.ModifyTakeProfitOrder(ctx, outbound.ModifyTakeProfitRequest{
-		Parent:        parent,
-		ExchangeOrder: tp.ExchangeOrder,
-		Request: outbound.TakeProfitRequest{
-			BaseQuantity: tp.ExchangeOrder.BaseQuantity(),
-			Price:        price,
-			StopPrice:    price,
-		},
-	})
-
-	tp.ExchangeOrder = eo
-	return tp, nil
-}
-
-func (f *worker) updateSL(ctx context.Context, t time.Time, sl domain.TPSLOrder, parent domain.ExchangeOrder) (domain.TPSLOrder, error) {
-	price, err := sl.Plot.At(t)
-	if err != nil {
-		return domain.TPSLOrder{}, err
-	}
-
-	eo, err := f.exchange.ModifyStopLossOrder(ctx, outbound.ModifyStopLossRequest{
-		Parent:        parent,
-		ExchangeOrder: sl.ExchangeOrder,
-		Request: outbound.StopLossRequest{
-			BaseQuantity: sl.ExchangeOrder.BaseQuantity(),
-			Price:        price,
-			StopPrice:    price,
-		},
-	})
-
-	sl.ExchangeOrder = eo
-	return sl, nil
-}
-
-func (f *worker) updateOrders(ctx context.Context, t time.Time) (*domain.Follow, error) {
-	updatedOrder, err := f.updateOrder(ctx, t, f.follow.Orders.Order)
-	if err != nil {
-		return nil, err
-	}
-
-	f.follow.Orders.Order = updatedOrder
-
-	for i, tp := range f.follow.Orders.TakeProfits {
-		updatedTP, err := f.updateTP(ctx, t, tp, updatedOrder.ExchangeOrder)
-		if err != nil {
-			return nil, err
-		}
-		f.follow.Orders.TakeProfits[i] = updatedTP
-	}
-
-	for i, sl := range f.follow.Orders.StopLosses {
-		updatedSL, err := f.updateSL(ctx, t, sl, updatedOrder.ExchangeOrder)
-		if err != nil {
-			return nil, err
-		}
-		f.follow.Orders.StopLosses[i] = updatedSL
-	}
-
-	return f.follow, nil
-}
-
-func (f *worker) cancelExchangeOrders(ctx context.Context) error {
-	eosList := []domain.ExchangeOrder{f.follow.Orders.Order.ExchangeOrder}
-	for _, tp := range f.follow.Orders.TakeProfits {
-		eosList = append(eosList, tp.ExchangeOrder)
-	}
-	for _, sl := range f.follow.Orders.StopLosses {
-		eosList = append(eosList, sl.ExchangeOrder)
-	}
-	return f.exchange.CancelOrders(ctx, outbound.CancelOrdersRequest{
-		ExchangeOrders: eosList,
-	})
-}
-
-func (f *worker) refreshOrder(ctx context.Context, order *domain.Order) error {
-	freshEo, err := f.exchange.GetOrder(ctx, order.ExchangeOrder)
+	eo, err := ex.GetOrder(ctx, tp.ExchangeOrder)
 	if err != nil {
 		return err
 	}
 
-	order.ExchangeOrder = freshEo
-	return nil
-}
+	status := domain.EoStatusToStopStatus(eo.Status())
+	fm.updateTP(idx, withStopEo(eo), withStopStatus(status))
 
-type followTicker struct {
-	follow *domain.Follow
-	ticker *time.Ticker
-}
-
-type follower struct {
-	logger        *zap.SugaredLogger
-	followTickers []followTicker
-	publisher     outbound.Publisher
-
-	mu sync.Mutex
-}
-
-func newFollower(logger *zap.SugaredLogger, publisher outbound.Publisher) *follower {
-	return &follower{
-		logger:        logger,
-		followTickers: []followTicker{},
-		publisher:     publisher,
-	}
-}
-
-func (f *follower) startFollow(ctx context.Context, follow *domain.Follow, exchange outbound.Exchange) error {
-	w := worker{
-		logger:   f.logger,
-		exchange: exchange,
-		follow:   follow,
+	switch status {
+	case domain.StopStatusCanceled, domain.StopStatusDone, domain.StopStatusError:
+		return errOrderFinished
 	}
 
-	followSnapshot, err := w.createExchangeOrders(ctx, time.Now())
-	if err != nil {
-		if err := w.cancelExchangeOrders(ctx); err != nil {
-			f.logger.Errorf("error cancellign requests: %v", err)
-		}
+	if err := ex.CancelOrder(ctx, eo); err != nil {
 		return err
 	}
 
-	if err := f.publisher.PublishFollowUpdate(ctx, outbound.FollowUpdate{
-		Follow: *followSnapshot,
-	}); err != nil {
-		f.logger.Error(err)
+	price, err := tp.Plot.At(tick)
+	if err != nil {
+		return err
 	}
 
-	go func() {
-		if err := f.run(ctx, w); err != nil {
-			f.logger.Errorf("following error: %v", err)
-		}
-	}()
+	order := fm.getOrder()
+	eo, err = ex.CreateTakeProfitOrder(ctx, outbound.CreateTakeProfitRequest{
+		Parent: order.ExchangeOrder,
+		Request: outbound.TakeProfitRequest{
+			BaseQuantity: order.ExchangeOrder.BaseQuantity() * tp.QuantityPct,
+			Price:        0,
+			StopPrice:    price,
+		},
+	})
+	if err != nil {
+		return err
+	}
+
+	fm.updateTP(idx, withStopEo(eo), withStopStatus(status))
 
 	return nil
 }
 
-func (f *follower) run(ctx context.Context, w worker) error {
-	defer func() {
-		f.logger.Infof("follow %s finished", w.follow.ID)
-	}()
+func (f *follower) modifySLs(ctx context.Context, tick time.Time, fm *followManager, ex outbound.Exchange) error {
+	eg := errgroup.Group{}
+	for i, tp := range fm.getSLs() {
+		func(idx int, tp domain.StopOrder) {
+			eg.Go(func() error {
+				return f.modifySL(ctx, tick, fm, ex, i, tp)
+			})
+		}(i, tp)
+	}
+	return eg.Wait()
+}
 
-	nextStart := NextStartTime(time.Now(), w.follow.Interval).Add(-500 * time.Millisecond) // some margin for standard delays
-	f.logger.Debugf("next interval: %s", nextStart.String())
-
-	tick := <-time.After(time.Until(nextStart))
-	ticker := time.NewTicker(w.follow.Interval)
-
-	fo := followTicker{
-		follow: w.follow,
-		ticker: ticker,
+func (f *follower) modifySL(ctx context.Context, tick time.Time, fm *followManager, ex outbound.Exchange, idx int, sl domain.StopOrder) error {
+	switch sl.Status {
+	case domain.StopStatusCanceled, domain.StopStatusDone, domain.StopStatusError:
+		return errOrderFinished
 	}
 
-	f.addOrderTicker(fo)
+	eo, err := ex.GetOrder(ctx, sl.ExchangeOrder)
+	if err != nil {
+		return err
+	}
 
+	status := domain.EoStatusToStopStatus(eo.Status())
+	fm.updateSL(idx, withStopEo(eo), withStopStatus(status))
+
+	switch status {
+	case domain.StopStatusCanceled, domain.StopStatusDone, domain.StopStatusError:
+		return errOrderFinished
+	}
+
+	if err := ex.CancelOrder(ctx, eo); err != nil {
+		return err
+	}
+
+	price, err := sl.Plot.At(tick)
+	if err != nil {
+		return err
+	}
+
+	order := fm.getOrder()
+	eo, err = ex.CreateStopLossOrder(ctx, outbound.CreateStopLossRequest{
+		Parent: order.ExchangeOrder,
+		Request: outbound.StopLossRequest{
+			BaseQuantity: order.ExchangeOrder.BaseQuantity() * sl.QuantityPct,
+			Price:        0,
+			StopPrice:    price,
+		},
+	})
+	if err != nil {
+		return err
+	}
+
+	fm.updateSL(idx, withStopEo(eo), withStopStatus(status))
+
+	return nil
+}
+
+type intervalLoop struct {
+	logger         *zap.SugaredLogger
+	itv, headstart time.Duration
+	stopC          chan struct{}
+}
+
+func newIntervalLoop(logger *zap.SugaredLogger, itv, headstart time.Duration) *intervalLoop {
+	return &intervalLoop{
+		logger:    logger,
+		itv:       itv,
+		headstart: headstart,
+		stopC:     make(chan struct{}),
+	}
+}
+
+func (l *intervalLoop) loop(fn func(time.Time) error) error {
 	for {
-		f.logger.Debugf("updating order %s", fo.follow.ID)
-		followSnapshot, updateErr := w.updateOrders(ctx, tick)
-		if updateErr != nil {
-			f.logger.Errorf("error updating order: %v", updateErr)
-			return updateErr
-		}
+		nextStart := NextIntervalStart(time.Now(), l.itv).Add(-l.headstart)
+		l.logger.Debugf("next interval: %s", nextStart.String())
 
-		if err := f.publisher.PublishFollowUpdate(ctx, outbound.FollowUpdate{
-			Follow: *followSnapshot,
-		}); err != nil {
-			f.logger.Error(err)
-		}
-
-		nextStart := NextStartTime(time.Now(), w.follow.Interval).Add(-500 * time.Millisecond) // some margin for standard delays
-		f.logger.Debugf("next interval: %s", nextStart.String())
-
-		var ok bool
-		tick, ok = <-fo.ticker.C
-		if !ok {
-			break
-		}
-	}
-
-	return nil
-}
-
-func (f *follower) stopFollow(followID string) error {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	for i, fo := range f.followTickers {
-		if fo.follow.ID == followID {
-			fo.ticker.Stop()
-			f.followTickers = slices.Delete(f.followTickers, i, i+1)
+		select {
+		case t := <-time.After(time.Until(nextStart)):
+			err := fn(t.Add(l.headstart))
+			if err != nil {
+				return err
+			}
+		case <-l.stopC:
 			return nil
 		}
 	}
-
-	return domain.ErrOrderNotFound
 }
 
-func (u *follower) addOrderTicker(ot followTicker) {
-	u.mu.Lock()
-	defer u.mu.Unlock()
-	u.followTickers = append(u.followTickers, ot)
+func (f *follower) publishFollowUpdate(ctx context.Context, update domain.Follow) {
+	go func() {
+		err := f.publisher.PublishFollowUpdate(ctx, outbound.FollowUpdate{
+			Follow: update,
+		})
+		if err != nil {
+			f.logger.Error(err)
+		}
+	}()
 }
 
 func baseQuantity(price, base, quote float64) float64 {

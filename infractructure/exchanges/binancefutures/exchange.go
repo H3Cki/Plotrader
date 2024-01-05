@@ -70,7 +70,7 @@ func (f *Exchange) Init(ctx context.Context) error {
 }
 
 func (f *Exchange) GetOrder(ctx context.Context, deo domain.ExchangeOrder) (domain.ExchangeOrder, error) {
-	eo, ok := deo.(*exchangeOrder)
+	eo, ok := deo.(exchangeOrder)
 	if !ok {
 		return nil, errors.New("unexpected ExchangeOrder type")
 	}
@@ -108,6 +108,10 @@ func (f *Exchange) ModifyStopLossOrder(ctx context.Context, req outbound.ModifyS
 	return f.modifySL(ctx, req)
 }
 
+func (f *Exchange) CancelOrder(ctx context.Context, eo domain.ExchangeOrder) error {
+	return f.cancelOrder(ctx, eo)
+}
+
 // Batch
 func (f *Exchange) CancelOrders(ctx context.Context, req outbound.CancelOrdersRequest) error {
 	return f.cancelOrders(ctx, req)
@@ -119,7 +123,7 @@ func (f *Exchange) createOrder(ctx context.Context, req outbound.CreateOrderRequ
 		return nil, err
 	}
 
-	side, err := orderSide(req.Side, false)
+	side, err := orderSide(req.PosSide, false)
 	if err != nil {
 		return nil, err
 	}
@@ -153,7 +157,7 @@ func (f *Exchange) createOrder(ctx context.Context, req outbound.CreateOrderRequ
 }
 
 func (f *Exchange) createTP(ctx context.Context, req outbound.CreateTakeProfitRequest) (domain.ExchangeOrder, error) {
-	parent, ok := req.Parent.(*exchangeOrder)
+	parent, ok := req.Parent.(exchangeOrder)
 	if !ok {
 		return nil, errors.New("unexpected ExchangeOrder type")
 	}
@@ -192,7 +196,7 @@ func (f *Exchange) createTP(ctx context.Context, req outbound.CreateTakeProfitRe
 }
 
 func (f *Exchange) modifyTP(ctx context.Context, req outbound.ModifyTakeProfitRequest) (domain.ExchangeOrder, error) {
-	eo, ok := req.ExchangeOrder.(*exchangeOrder)
+	eo, ok := req.ExchangeOrder.(exchangeOrder)
 	if !ok {
 		return nil, errors.New("unexpected ExchangeOrder type")
 	}
@@ -243,7 +247,7 @@ func (f *Exchange) modifyTP(ctx context.Context, req outbound.ModifyTakeProfitRe
 }
 
 func (f *Exchange) createSL(ctx context.Context, req outbound.CreateStopLossRequest) (domain.ExchangeOrder, error) {
-	parent, ok := req.Parent.(*exchangeOrder)
+	parent, ok := req.Parent.(exchangeOrder)
 	if !ok {
 		return nil, errors.New("unexpected ExchangeOrder type")
 	}
@@ -282,7 +286,7 @@ func (f *Exchange) createSL(ctx context.Context, req outbound.CreateStopLossRequ
 }
 
 func (f *Exchange) modifySL(ctx context.Context, req outbound.ModifyStopLossRequest) (domain.ExchangeOrder, error) {
-	eo, ok := req.ExchangeOrder.(*exchangeOrder)
+	eo, ok := req.ExchangeOrder.(exchangeOrder)
 	if !ok {
 		return nil, errors.New("unexpected ExchangeOrder type")
 	}
@@ -333,7 +337,7 @@ func (f *Exchange) modifySL(ctx context.Context, req outbound.ModifyStopLossRequ
 }
 
 func (f *Exchange) modifyOrder(ctx context.Context, req outbound.ModifyOrderRequest) (domain.ExchangeOrder, error) {
-	eo, ok := req.ExchangeOrder.(*exchangeOrder)
+	eo, ok := req.ExchangeOrder.(exchangeOrder)
 	if !ok {
 		return nil, errors.New("unexpected ExchangeOrder type")
 	}
@@ -395,7 +399,7 @@ func (f *Exchange) cancelOrders(ctx context.Context, req outbound.CancelOrdersRe
 			errs = append(errs, fmt.Errorf("nil order at index %d", i))
 			continue
 		}
-		eo, ok := order.(*exchangeOrder)
+		eo, ok := order.(exchangeOrder)
 		if !ok {
 			errs = append(errs, fmt.Errorf("unexpected error type at index %d", i))
 			continue
@@ -407,6 +411,18 @@ func (f *Exchange) cancelOrders(ctx context.Context, req outbound.CancelOrdersRe
 	}
 
 	return errors.Join(errs...)
+}
+
+func (f *Exchange) cancelOrder(ctx context.Context, eo domain.ExchangeOrder) error {
+	e, ok := eo.(exchangeOrder)
+	if !ok {
+		return fmt.Errorf("unexpected order type")
+	}
+
+	svc := f.client.NewCancelOrderService()
+	_, err := svc.OrderID(e.O.OrderID).Symbol(e.O.Symbol).Do(ctx)
+
+	return err
 }
 
 // info tries to read the ei from file, if it doesn't exist or is outdated it attempts to fetch the ei
@@ -488,106 +504,3 @@ func (f *Exchange) symbol(ctx context.Context, symbol string) (futures.Symbol, e
 
 	return futures.Symbol{}, fmt.Errorf("unknown symbol: %s", symbol)
 }
-
-// func (f *Exchange) CreateOrders(ctx context.Context, req outbound.CreateOrdersRequest) (outbound.ExchangeOrders, error) {
-// 	symbol, err := f.symbol(ctx, pairToSymbol(req.Pair))
-// 	if err != nil {
-// 		return outbound.ExchangeOrders{}, err
-// 	}
-
-// 	orderSvc, err := corToOrderService(f.client, req, symbol)
-// 	if err != nil {
-// 		return outbound.ExchangeOrders{}, err
-// 	}
-// 	takeProfitSvcs, err := corToTakeProfitServices(f.client, req, symbol)
-// 	if err != nil {
-// 		return outbound.ExchangeOrders{}, err
-// 	}
-// 	stopLossSvcs, err := corToStopLossServices(f.client, req, symbol)
-// 	if err != nil {
-// 		return outbound.ExchangeOrders{}, err
-// 	}
-
-// 	orderBatch := []*futures.CreateOrderService{orderSvc}
-// 	orderBatch = append(orderBatch, takeProfitSvcs...)
-// 	orderBatch = append(orderBatch, stopLossSvcs...)
-
-// 	batchRes, err := f.client.NewCreateBatchOrdersService().OrderList(orderBatch).Do(ctx)
-
-// 	exTPs := []domain.ExchangeOrder{}
-// 	for i, tp := range batchRes.Orders[1 : 1+len(takeProfitSvcs)] {
-// 		exOrder := newEo(tp, batchRes.Errors[i])
-// 		exTPs = append(exTPs, exOrder)
-// 	}
-
-// 	exSLs := []domain.ExchangeOrder{}
-// 	for i, sl := range batchRes.Orders[1+len(takeProfitSvcs):] {
-// 		exOrder := newEo(sl, batchRes.Errors[i])
-// 		exSLs = append(exSLs, exOrder)
-// 	}
-
-// 	return outbound.ExchangeOrders{
-// 		Order:       newEo(batchRes.Orders[0], batchRes.Errors[0]),
-// 		TakeProfits: exTPs,
-// 		StopLosses:  exSLs,
-// 	}, err
-// }
-
-// func (f *Exchange) ModifyOrders(ctx context.Context, req outbound.ModifyOrdersRequest) (outbound.ExchangeOrders, error) {
-// 	orderMod := toOrderModification(req.Order)
-
-// 	var tps, sls []futures.OrderModification
-// 	for _, tpMod := range req.TakeProfit {
-// 		mod := toOrderModification(tpMod)
-// 		tps = append(tps, mod)
-// 	}
-// 	for _, slMod := range req.TakeProfit {
-// 		mod := toOrderModification(slMod)
-// 		sls = append(sls, mod)
-// 	}
-
-// 	batchOrders := []futures.OrderModification{orderMod}
-// 	batchOrders = append(batchOrders, tps...)
-// 	batchOrders = append(batchOrders, sls...)
-
-// 	svc := f.client.NewModifyMultipleOrdersService().BatchOrders(batchOrders)
-// 	resp, err := svc.Do(ctx)
-// 	if err != nil {
-// 		return outbound.ExchangeOrders{}, nil
-// 	}
-
-// 	orderResp, err := modRespAt(resp, 0)
-// 	if err != nil {
-// 		return outbound.ExchangeOrders{}, nil
-// 	}
-
-// 	fmt.Print(orderResp)
-// 	return outbound.ExchangeOrders{
-// 		Order:       newEo(orderResp, nil),
-// 		TakeProfits: []domain.ExchangeOrder{}, //todo
-// 		StopLosses:  []domain.ExchangeOrder{},
-// 	}, nil
-// }
-
-// func (f *Exchange) CancelOrders(ctx context.Context, req outbound.CancelOrdersRequest) error {
-// 	symbol := ""
-// 	orderIDs := []int64{}
-// 	for _, eorder := range req.ExchangeOrders {
-// 		o := eorder.(*exchangeOrder)
-// 		orderIDs = append(orderIDs, o.order.OrderID)
-// 		if symbol == "" {
-// 			symbol = o.order.Symbol
-// 		}
-// 	}
-
-// 	f.logger.Debugf("attempting to cancel %d orders", len(orderIDs))
-
-// 	// assume all have the same symbol
-// 	_, err := f.client.NewCancelMultipleOrdersService().Symbol(symbol).OrderIDList(orderIDs).Do(ctx)
-// 	return err
-// }
-
-// func (f *Exchange) cancelOrder(ctx context.Context, symbol string, id int64) error {
-// 	_, err := f.client.NewCancelOrderService().Symbol(symbol).OrderID(id).Do(ctx)
-// 	return err
-// }

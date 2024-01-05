@@ -5,7 +5,6 @@ import (
 
 	"github.com/H3Cki/Plotrader/core/inbound"
 	"github.com/H3Cki/Plotrader/core/outbound"
-	"github.com/H3Cki/Plotrader/presentation/sqsconsumer"
 	"go.uber.org/zap"
 )
 
@@ -20,8 +19,7 @@ type App struct {
 	Publisher outbound.Publisher
 
 	// presentation
-	SQSConsumer *sqsconsumer.Consumer
-	HTTPServer  http.Server
+	HTTPServer http.Server
 }
 
 func NewApp(cfg AppConfig, opts ...func(*App) error) (*App, error) {

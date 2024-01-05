@@ -45,13 +45,13 @@ type CreateFollowRequest struct {
 }
 
 type OrderRequest struct {
-	QuoteQuantity float64        `json:"quoteQuantity"`
 	BaseQuantity  float64        `json:"baseQuantity"`
+	QuoteQuantity float64        `json:"quoteQuantity"`
 	Plot          map[string]any `json:"plot" validate:"required"`
 }
 
 type StopRequest struct {
-	QuantityPct float64        `json:"quantityPct" alidate:"required"`
+	QuantityPct float64        `json:"quantityPct"`
 	Plot        map[string]any `json:"plot" validate:"required"`
 }
 

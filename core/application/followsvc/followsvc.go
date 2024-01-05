@@ -64,13 +64,15 @@ func (s *Service) StartFollow(ctx context.Context, req inbound.CreateFollowReque
 		return errors.Wrap(err, "error parsing price plot")
 	}
 
-	var takeProfits, stopLosses []domain.TPSLOrder
+	var takeProfits, stopLosses []domain.StopOrder
 	for _, tp := range req.TakeProfits {
 		plot, err := parsePlotMap(tp.Plot)
 		if err != nil {
 			return errors.Wrap(err, "error parsing take profit plot")
 		}
-		takeProfits = append(takeProfits, domain.TPSLOrder{
+		takeProfits = append(takeProfits, domain.StopOrder{
+			ID:          uuid.NewString(),
+			Status:      domain.StopStatusPending,
 			QuantityPct: tp.QuantityPct,
 			Plot:        plot,
 		})
@@ -80,31 +82,31 @@ func (s *Service) StartFollow(ctx context.Context, req inbound.CreateFollowReque
 		if err != nil {
 			return errors.Wrap(err, "error parsing stop loss plot")
 		}
-		stopLosses = append(stopLosses, domain.TPSLOrder{
+		stopLosses = append(stopLosses, domain.StopOrder{
+			ID:          uuid.NewString(),
+			Status:      domain.StopStatusPending,
 			QuantityPct: sl.QuantityPct,
 			Plot:        plot,
 		})
 	}
 
-	follow := &domain.Follow{
-		ID:       uuid.NewString(),
-		Exchange: req.Exchange.Name,
-
+	follow := domain.Follow{
+		ID:           uuid.NewString(),
+		Exchange:     req.Exchange.Name,
 		Pair:         pair,
 		PositionSide: domain.PositionSide(req.Side),
 		Interval:     interval,
+		WebhookURL:   req.Webhook,
 
-		Orders: domain.Orders{
-			Order: domain.Order{
-				QuoteQuantity: req.Order.QuoteQuantity,
-				BaseQuantity:  req.Order.BaseQuantity,
-				Plot:          orderPlot,
-			},
-			TakeProfits: takeProfits,
-			StopLosses:  stopLosses,
+		Order: domain.ParentOrder{
+			ID:            uuid.NewString(),
+			Status:        domain.OrderStatusPending,
+			BaseQuantity:  req.Order.BaseQuantity,
+			QuoteQuantity: req.Order.QuoteQuantity,
+			Plot:          orderPlot,
 		},
-
-		WebhookURL: req.Webhook,
+		TakeProfits: takeProfits,
+		StopLosses:  stopLosses,
 	}
 
 	if err := validate.Struct(follow); err != nil {
@@ -115,7 +117,7 @@ func (s *Service) StartFollow(ctx context.Context, req inbound.CreateFollowReque
 }
 
 func (s *Service) StopFollow(ctx context.Context, req inbound.CancelFollowRequest) error {
-	return s.updater.stopFollow(req.FollowID)
+	return nil ///return s.updater.stopFollow(req.FollowID)
 }
 
 var predefinedDurations = map[string]time.Duration{

@@ -29,12 +29,24 @@ type Exchange interface {
 	ModifyStopLossOrder(context.Context, ModifyStopLossRequest) (domain.ExchangeOrder, error)
 
 	// Batch
-	CancelOrders(context.Context, CancelOrdersRequest) error
+	CancelOrder(context.Context, domain.ExchangeOrder) error
+}
+
+type CreateStopOrderRequest struct {
+	Request StopRequest
+}
+
+type StopRequest struct {
+	Type         domain.StopType
+	Parent       domain.ExchangeOrder
+	BaseQuantity float64
+	StopPrice    float64
+	//Price        float64
 }
 
 type CreateOrderRequest struct {
 	Pair    domain.Pair
-	Side    domain.PositionSide
+	PosSide domain.PositionSide
 	Request OrderRequest
 }
 
@@ -84,4 +96,8 @@ type StopLossRequest struct {
 
 type CancelOrdersRequest struct {
 	ExchangeOrders []domain.ExchangeOrder
+}
+
+type CancelOrderRequest struct {
+	ExchangeOrder domain.ExchangeOrder
 }
