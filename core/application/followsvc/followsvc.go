@@ -34,8 +34,6 @@ func New(cfg Config) *Service {
 }
 
 func (s *Service) StartFollow(ctx context.Context, req inbound.CreateFollowRequest) error {
-	s.logger.Debug("creating order")
-
 	if err := validate.Struct(req); err != nil {
 		return err
 	}
