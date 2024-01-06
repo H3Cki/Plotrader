@@ -102,6 +102,7 @@ type StopOrder struct {
 }
 
 type ExchangeOrder interface {
+	ID() string
 	Status() ExchangeOrderStatus
 	CreatedAt() time.Time
 	Price() float64

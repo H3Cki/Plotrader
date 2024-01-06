@@ -78,7 +78,7 @@ func (f *Exchange) GetOrder(ctx context.Context, deo domain.ExchangeOrder) (doma
 	if err != nil {
 		return nil, err
 	}
-	return newEo(order), nil
+	return newEo(*order), nil
 }
 
 // Order
@@ -153,7 +153,7 @@ func (f *Exchange) createOrder(ctx context.Context, req outbound.CreateOrderRequ
 		return nil, err
 	}
 
-	return newEo(corToOrder(resp)), nil
+	return newEo(*corToOrder(resp)), nil
 }
 
 func (f *Exchange) createTP(ctx context.Context, req outbound.CreateTakeProfitRequest) (domain.ExchangeOrder, error) {
@@ -192,7 +192,7 @@ func (f *Exchange) createTP(ctx context.Context, req outbound.CreateTakeProfitRe
 		return nil, err
 	}
 
-	return newEo(corToOrder(resp)), nil
+	return newEo(*corToOrder(resp)), nil
 }
 
 func (f *Exchange) modifyTP(ctx context.Context, req outbound.ModifyTakeProfitRequest) (domain.ExchangeOrder, error) {
@@ -243,7 +243,7 @@ func (f *Exchange) modifyTP(ctx context.Context, req outbound.ModifyTakeProfitRe
 		return nil, err
 	}
 
-	return newEo(corToOrder(resp)), nil
+	return newEo(*corToOrder(resp)), nil
 }
 
 func (f *Exchange) createSL(ctx context.Context, req outbound.CreateStopLossRequest) (domain.ExchangeOrder, error) {
@@ -282,7 +282,7 @@ func (f *Exchange) createSL(ctx context.Context, req outbound.CreateStopLossRequ
 		return nil, err
 	}
 
-	return newEo(corToOrder(resp)), nil
+	return newEo(*corToOrder(resp)), nil
 }
 
 func (f *Exchange) modifySL(ctx context.Context, req outbound.ModifyStopLossRequest) (domain.ExchangeOrder, error) {
@@ -333,7 +333,7 @@ func (f *Exchange) modifySL(ctx context.Context, req outbound.ModifyStopLossRequ
 		return nil, err
 	}
 
-	return newEo(corToOrder(resp)), nil
+	return newEo(*corToOrder(resp)), nil
 }
 
 func (f *Exchange) modifyOrder(ctx context.Context, req outbound.ModifyOrderRequest) (domain.ExchangeOrder, error) {
@@ -378,7 +378,7 @@ func (f *Exchange) modifyOrder(ctx context.Context, req outbound.ModifyOrderRequ
 		return nil, err
 	}
 
-	return newEo(morToOrder(resp)), nil
+	return newEo(*morToOrder(resp)), nil
 }
 
 type orderValues struct {

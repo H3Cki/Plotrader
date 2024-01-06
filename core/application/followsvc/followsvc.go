@@ -22,14 +22,14 @@ type Config struct {
 }
 
 type Service struct {
-	logger  *zap.SugaredLogger
-	updater *follower
+	logger   *zap.SugaredLogger
+	follower *follower
 }
 
 func New(cfg Config) *Service {
 	return &Service{
-		logger:  cfg.Logger,
-		updater: newFollower(cfg.Logger, cfg.Pubblisher),
+		logger:   cfg.Logger,
+		follower: newFollower(cfg.Logger, cfg.Pubblisher),
 	}
 }
 
@@ -111,7 +111,7 @@ func (s *Service) StartFollow(ctx context.Context, req inbound.CreateFollowReque
 		return err
 	}
 
-	return s.updater.startFollow(ctx, follow, exchange)
+	return s.follower.startFollow(ctx, follow, exchange)
 }
 
 func (s *Service) StopFollow(ctx context.Context, req inbound.CancelFollowRequest) error {

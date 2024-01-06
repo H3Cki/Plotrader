@@ -9,10 +9,10 @@ import (
 )
 
 type exchangeOrder struct {
-	O *futures.Order `json:"order"`
+	O futures.Order `json:"order"`
 }
 
-func newEo(order *futures.Order) exchangeOrder {
+func newEo(order futures.Order) exchangeOrder {
 	return exchangeOrder{O: order}
 }
 
@@ -30,6 +30,10 @@ func (eo exchangeOrder) Status() domain.ExchangeOrderStatus {
 		return domain.ExchangeOrerStatusCanceled
 	}
 	return ""
+}
+
+func (eo exchangeOrder) ID() string {
+	return eo.O.ClientOrderID
 }
 
 func (eo exchangeOrder) CreatedAt() time.Time {
