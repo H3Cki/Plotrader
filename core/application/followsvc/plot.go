@@ -163,9 +163,7 @@ func parsePlot(pj plotJSON) (geometry.Plot, error) {
 			return nil, err
 		}
 
-		p, err := geometry.NewLine(geometry.Point(lineJSON.P0), geometry.Point(lineJSON.P1))
-
-		return geometry.NewLimit(p, time.Now().Add(-1*time.Hour), time.Now().Add(35*time.Second)), err
+		return geometry.NewLine(geometry.Point(lineJSON.P0), geometry.Point(lineJSON.P1))
 	case KEY_LINE_LOG:
 		lineJSON := linePlotJSON{}
 		if err := json.Unmarshal(args, &lineJSON); err != nil {
