@@ -87,6 +87,18 @@ func (m *modder) getStop(id string) domain.StopOrder {
 	return m.stopMap[id]
 }
 
+func (m *modder) getStops() []domain.StopOrder {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	stops := []domain.StopOrder{}
+	for _, stop := range m.stopMap {
+		stops = append(stops, stop)
+	}
+
+	return stops
+}
+
 func (m *modder) getFollow() domain.Follow {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -99,16 +111,16 @@ func (m *modder) getFollow() domain.Follow {
 		sls[i] = m.stopMap[sl.ID]
 	}
 	return domain.Follow{
-		ID:           m.follow.ID,
-		Exchange:     m.follow.Exchange,
-		Pair:         m.follow.Pair,
-		PositionSide: m.follow.PositionSide,
-		Interval:     m.follow.Interval,
-		LastTick:     m.follow.LastTick,
-		WebhookURL:   m.follow.WebhookURL,
-		Order:        m.follow.Order,
-		TakeProfits:  tps,
-		StopLosses:   sls,
+		ID:          m.follow.ID,
+		Exchange:    m.follow.Exchange,
+		Pair:        m.follow.Pair,
+		Side:        m.follow.Side,
+		Interval:    m.follow.Interval,
+		LastTick:    m.follow.LastTick,
+		WebhookURL:  m.follow.WebhookURL,
+		Order:       m.follow.Order,
+		TakeProfits: tps,
+		StopLosses:  sls,
 	}
 }
 

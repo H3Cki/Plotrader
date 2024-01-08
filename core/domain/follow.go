@@ -7,7 +7,7 @@ import (
 	"github.com/H3Cki/Plotrader/core/domain/geometry"
 )
 
-type PositionSide string
+type Side string
 type StopType string
 type StopStatus string
 type OrderStatus string
@@ -16,8 +16,8 @@ type ExchangeOrderStatus string
 var (
 	ErrFollowNotFound = errors.New("follow not found")
 
-	PositionSideLong  PositionSide = "LONG"
-	PositionSideShort PositionSide = "SHORT"
+	SideLong  Side = "LONG"
+	SideShort Side = "SHORT"
 
 	OrderStatusPending  OrderStatus = "PENDING"
 	OrderStatusOpen     OrderStatus = "OPEN"
@@ -67,13 +67,13 @@ func EoStatusToStopStatus(eos ExchangeOrderStatus) StopStatus {
 }
 
 type Follow struct {
-	ID           string
-	Exchange     string
-	Pair         Pair
-	PositionSide PositionSide
-	Interval     time.Duration
-	LastTick     time.Time
-	WebhookURL   string
+	ID         string
+	Exchange   string
+	Pair       Pair
+	Side       Side
+	Interval   time.Duration
+	LastTick   time.Time
+	WebhookURL string
 
 	Order       ParentOrder
 	TakeProfits []StopOrder

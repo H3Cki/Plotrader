@@ -50,7 +50,7 @@ func (f *follower) startFollow(ctx context.Context, follow domain.Follow, exchan
 
 	f.publishFollowUpdate(ctx, follow.ID)
 
-	loop := f.newIntervalLoop(follow.ID, follow.Interval, 500*time.Millisecond)
+	loop := f.newIntervalLoop(follow.ID, follow.Interval, 1*time.Second)
 	go func() {
 		loop.loop(func(tick time.Time) error {
 			err := f.handleTick(ctx, tick, follow.ID, exchange)
@@ -208,7 +208,7 @@ func (f *follower) createParentOrder(ctx context.Context, t time.Time, followID 
 	f.logger.Debug("creating order on exchange")
 	eo, err := ex.CreateOrder(ctx, outbound.CreateOrderRequest{
 		Pair:    follow.Pair,
-		PosSide: follow.PositionSide,
+		PosSide: follow.Side,
 		Request: outbound.OrderRequest{
 			BaseQuantity: baseQuantity(price, follow.Order.BaseQuantity, follow.Order.QuoteQuantity),
 			Price:        price,
@@ -248,21 +248,15 @@ func (f *follower) modifyParentOrder(ctx context.Context, tick time.Time, follow
 	parent := follow.Order
 
 	switch parent.Status {
-	case domain.OrderStatusActive:
-		f.logger.Debug("parent order active, skipping update")
-		return nil
 	case domain.OrderStatusCanceled, domain.OrderStatusError:
-		f.logger.Debug("parent order done, returning finished err")
+		f.logger.Debug("1 parent order done, returning finished err")
 		return errOrderFinished
 	}
 
-	f.logger.Debug("getting parent order")
 	eo, err := ex.GetOrder(ctx, parent.ExchangeOrder)
 	if err != nil {
 		return err
 	}
-
-	f.logger.Debugf("eoeo\n\n%+v\n\n", eo)
 
 	// Updated
 	parent = updateParentEo(parent, eo)
@@ -270,10 +264,10 @@ func (f *follower) modifyParentOrder(ctx context.Context, tick time.Time, follow
 
 	switch parent.Status {
 	case domain.OrderStatusActive:
-		f.logger.Debug("parent order active, skipping update")
+		f.logger.Debug("2 parent order active, skipping update")
 		return nil
 	case domain.OrderStatusCanceled, domain.OrderStatusError:
-		f.logger.Debug("parent order done, returning finished err")
+		f.logger.Debug("2 parent order done, returning finished err")
 		return errOrderFinished
 	}
 
@@ -282,7 +276,6 @@ func (f *follower) modifyParentOrder(ctx context.Context, tick time.Time, follow
 		return err
 	}
 
-	f.logger.Debug("modifying parent order on exchange")
 	eo, err = ex.ModifyOrder(ctx, outbound.ModifyOrderRequest{
 		ExchangeOrder: eo,
 		Request: outbound.OrderRequest{
@@ -294,7 +287,6 @@ func (f *follower) modifyParentOrder(ctx context.Context, tick time.Time, follow
 		return err
 	}
 
-	f.logger.Debug("updating parent status")
 	updatedParent := updateParentEo(follow.Order, eo)
 	modder.setParentOrder(updatedParent)
 	return nil
@@ -309,6 +301,23 @@ func (f *follower) modifyStops(ctx context.Context, tick time.Time, followID str
 		return f.modifyTPs(ctx, tick, followID, ex)
 	})
 	return eg.Wait()
+}
+
+func (f *follower) cancelStops(ctx context.Context, tick time.Time, followID string, ex outbound.Exchange) error {
+	f.logger.Debug("updating take profits")
+	wg := sync.WaitGroup{}
+	stops := f.registry.getModder(followID).getStops()
+	wg.Add(len(stops))
+	for _, stop := range stops {
+		go func(stop domain.StopOrder) {
+			defer wg.Done()
+			if err := ex.CancelOrder(ctx, stop.ExchangeOrder); err != nil {
+				f.logger.Errorf("error cancelling order: %v", err)
+			}
+		}(stop)
+	}
+	wg.Wait()
+	return nil
 }
 
 func (f *follower) modifyTPs(ctx context.Context, tick time.Time, followID string, ex outbound.Exchange) error {
@@ -337,14 +346,10 @@ func (f *follower) modifyTP(ctx context.Context, tick time.Time, followID string
 		return nil //todo
 	}
 
-	logger.Debugf("previous eo ID: %s", tp.ExchangeOrder.ID())
-
 	eo, err := ex.GetOrder(ctx, tp.ExchangeOrder)
 	if err != nil {
 		return err
 	}
-
-	logger.Debugf("got fresh order with status: %s", eo.Status())
 
 	tp = updateStopEo(tp, eo)
 	modder.setStop(tp)
@@ -355,9 +360,6 @@ func (f *follower) modifyTP(ctx context.Context, tick time.Time, followID string
 		return nil //todo
 	}
 
-	logger.Debugf("previous eo (refresh) ID: %s", eo.ID())
-
-	logger.Debug("cancelling TP order")
 	if err := ex.CancelOrder(ctx, eo); err != nil {
 		return err
 	}

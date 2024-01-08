@@ -1,8 +1,10 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"os"
+	"time"
 
 	"github.com/H3Cki/Plotrader/cmd"
 	"github.com/urfave/cli/v2"
@@ -47,7 +49,16 @@ func before(ctx *cli.Context) error {
 		}
 		logger = l
 	} else {
-		l, err := zap.NewDevelopment()
+		fn := fmt.Sprintf("logs-%d.txt", time.Now().Unix())
+		cfg := zap.Config{
+			Level:            zap.NewAtomicLevelAt(zap.DebugLevel),
+			Development:      true,
+			Encoding:         "console",
+			EncoderConfig:    zap.NewDevelopmentEncoderConfig(),
+			OutputPaths:      []string{"stdout", fn},
+			ErrorOutputPaths: []string{"stderr"},
+		}
+		l, err := cfg.Build()
 		if err != nil {
 			return err
 		}

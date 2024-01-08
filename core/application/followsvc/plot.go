@@ -19,6 +19,41 @@ const (
 	KEY_LIMIT             = "limit"
 )
 
+var formats = []string{
+	"Mon 02 Jan'06 15:04",        // TradingView
+	"2006/01/02 15:04",           // Binance
+	"01/02 03:04:05PM '06 -0700", // The reference time, in numerical order.
+	"Mon Jan _2 15:04:05 2006",
+	"Mon Jan _2 15:04:05 MST 2006",
+	"Mon Jan 02 15:04:05 -0700 2006",
+	"02 Jan 06 15:04 MST",
+	"02 Jan 06 15:04 -0700", // RFC822 with numeric zone
+	"Monday, 02-Jan-06 15:04:05 MST",
+	"Mon, 02 Jan 2006 15:04:05 MST",
+	"Mon, 02 Jan 2006 15:04:05 -0700", // RFC1123 with numeric zone
+	"2006-01-02T15:04:05Z07:00",
+	"2006-01-02T15:04:05.999999999Z07:00",
+	"3:04PM",
+	// Handy time stamps.
+	"Jan _2 15:04:05",
+	"Jan _2 15:04:05.000",
+	"Jan _2 15:04:05.000000",
+	"Jan _2 15:04:05.000000000",
+	"2006-01-02 15:04:05",
+	"2006-01-02",
+	"15:04:05",
+}
+
+func parseTime(s string) (time.Time, error) {
+	for _, format := range formats {
+		t, err := time.Parse(format, s)
+		if err == nil {
+			return t, nil
+		}
+	}
+	return time.Time{}, fmt.Errorf("unable to parse time string: %s", s)
+}
+
 // plotJSON is a general structure holding plot type and unparse arguments for that type
 type plotJSON struct {
 	Type string          `json:"type"`
@@ -27,7 +62,29 @@ type plotJSON struct {
 
 // linePlotJSON is a structure holding arguments for Line and LogLine
 type linePlotJSON struct {
-	P0, P1 geometry.Point
+	P0, P1 pointJSON
+}
+
+type pointJSON geometry.Point
+
+func (p *pointJSON) UnmarshalJSON(data []byte) error {
+	tmp := struct {
+		Date  string  `json:"date"`
+		Price float64 `json:"price"`
+	}{}
+
+	if err := json.Unmarshal(data, &tmp); err != nil {
+		return err
+	}
+
+	time, err := parseTime(tmp.Date)
+	if err != nil {
+		return err
+	}
+
+	p.Date = time
+	p.Price = tmp.Price
+	return nil
 }
 
 // oggsetPlotJSON is a structure holding arguments for AbsoluteOffset and PercentageOffset
@@ -40,6 +97,32 @@ type offsetPlotJSON struct {
 type limitPlotJSON struct {
 	Since, Until time.Time
 	Plot         plotJSON
+}
+
+func (p *limitPlotJSON) UnmarshalJSON(data []byte) error {
+	tmp := struct {
+		Since, Until string
+		Plot         plotJSON
+	}{}
+
+	if err := json.Unmarshal(data, &tmp); err != nil {
+		return err
+	}
+
+	since, err := parseTime(tmp.Since)
+	if err != nil {
+		return err
+	}
+
+	until, err := parseTime(tmp.Until)
+	if err != nil {
+		return err
+	}
+
+	p.Since = since
+	p.Until = until
+	p.Plot = tmp.Plot
+	return nil
 }
 
 // oggsetPlotJSON is a structure holding arguments for Min and Max
@@ -80,14 +163,16 @@ func parsePlot(pj plotJSON) (geometry.Plot, error) {
 			return nil, err
 		}
 
-		return geometry.NewLine(lineJSON.P0, lineJSON.P1)
+		p, err := geometry.NewLine(geometry.Point(lineJSON.P0), geometry.Point(lineJSON.P1))
+
+		return geometry.NewLimit(p, time.Now().Add(-1*time.Hour), time.Now().Add(35*time.Second)), err
 	case KEY_LINE_LOG:
 		lineJSON := linePlotJSON{}
 		if err := json.Unmarshal(args, &lineJSON); err != nil {
 			return nil, err
 		}
 
-		return geometry.NewLogLine(lineJSON.P0, lineJSON.P1)
+		return geometry.NewLogLine(geometry.Point(lineJSON.P0), geometry.Point(lineJSON.P1))
 	case KEY_OFFSET_ABSOLUTE:
 		offsetJSON := offsetPlotJSON{}
 		if err := json.Unmarshal(args, &offsetJSON); err != nil {

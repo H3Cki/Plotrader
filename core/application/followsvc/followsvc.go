@@ -89,12 +89,12 @@ func (s *Service) StartFollow(ctx context.Context, req inbound.CreateFollowReque
 	}
 
 	follow := domain.Follow{
-		ID:           uuid.NewString(),
-		Exchange:     req.Exchange.Name,
-		Pair:         pair,
-		PositionSide: domain.PositionSide(req.Side),
-		Interval:     interval,
-		WebhookURL:   req.Webhook,
+		ID:         uuid.NewString(),
+		Exchange:   req.Exchange.Name,
+		Pair:       pair,
+		Side:       domain.Side(req.Side),
+		Interval:   interval,
+		WebhookURL: req.Webhook,
 
 		Order: domain.ParentOrder{
 			ID:            uuid.NewString(),

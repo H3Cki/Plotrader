@@ -46,7 +46,7 @@ type StopRequest struct {
 
 type CreateOrderRequest struct {
 	Pair    domain.Pair
-	PosSide domain.PositionSide
+	PosSide domain.Side
 	Request OrderRequest
 }
 

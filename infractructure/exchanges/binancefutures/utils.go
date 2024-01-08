@@ -24,15 +24,15 @@ func oppositeSide(s futures.SideType) futures.SideType {
 	return ""
 }
 
-func orderSide(side domain.PositionSide, opposite bool) (futures.SideType, error) {
+func orderSide(side domain.Side, opposite bool) (futures.SideType, error) {
 	switch side {
-	case domain.PositionSideLong:
+	case domain.SideLong:
 		s := futures.SideTypeBuy
 		if opposite {
 			s = oppositeSide(s)
 		}
 		return s, nil
-	case domain.PositionSideShort:
+	case domain.SideShort:
 		s := futures.SideTypeSell
 		if opposite {
 			s = oppositeSide(s)

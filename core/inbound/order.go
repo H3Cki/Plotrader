@@ -32,10 +32,10 @@ type FollowerService interface {
 }
 
 type CreateFollowRequest struct {
-	Exchange ExchangeConfig      `json:"exchange" validate:"required"`
-	Symbol   string              `json:"symbol" validate:"required"`
-	Side     domain.PositionSide `json:"side" validate:"required"`
-	Interval string              `json:"interval" validate:"required"`
+	Exchange ExchangeConfig `json:"exchange" validate:"required"`
+	Symbol   string         `json:"symbol" validate:"required"`
+	Side     domain.Side    `json:"side" validate:"required"`
+	Interval string         `json:"interval" validate:"required"`
 
 	Order       OrderRequest  `json:"order" validate:"required"`
 	TakeProfits []StopRequest `json:"takeProfits"`

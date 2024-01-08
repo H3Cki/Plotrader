@@ -25,7 +25,7 @@ func (p *Publisher) PublishFollowUpdate(ctx context.Context, update outbound.Fol
 		//p.logger.Debug("webhook URL not specified for update %+v", update)
 		return nil
 	}
-
+	return nil
 	msgBytes, err := json.Marshal(update)
 	if err != nil {
 		return errors.Wrap(err, "error marshalling message")
@@ -35,6 +35,7 @@ func (p *Publisher) PublishFollowUpdate(ctx context.Context, update outbound.Fol
 	if err != nil {
 		return err
 	}
+	defer res.Body.Close()
 
 	if res.StatusCode >= 400 {
 		return fmt.Errorf("unexpected status code: %d", res.StatusCode)
