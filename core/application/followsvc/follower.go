@@ -44,8 +44,10 @@ func (f *follower) startFollow(ctx context.Context, follow domain.Follow, exchan
 	f.logger.Debug("creating orders")
 
 	intervalStart := IntervalStart(time.Now(), follow.Interval)
-	if err := f.createOrders(ctx, follow.ID, intervalStart, exchange); err != nil {
-		return err
+	err = outbound.ErrPriceOutOfRange
+	for errors.Is(err, outbound.ErrPriceOutOfRange) {
+		err = f.createOrders(ctx, follow.ID, intervalStart, exchange)
+		time.Sleep(time.Minute)
 	}
 
 	f.publishFollowUpdate(ctx, follow.ID)
