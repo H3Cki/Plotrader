@@ -39,8 +39,7 @@ func (l *Line) At(date time.Time) (float64, error) {
 
 // Straight line on semi-logarighmic (x, log10) graph
 type LogLine struct {
-	M, K, Xoffset         float64
-	LeftLimit, RightLimit time.Time
+	M, K, Xoffset float64
 }
 
 func NewLogLine(p0, p1 Point) (*LogLine, error) {

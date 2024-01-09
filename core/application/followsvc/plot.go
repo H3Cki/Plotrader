@@ -21,6 +21,7 @@ const (
 
 var formats = []string{
 	"Mon 02 Jan'06 15:04",        // TradingView
+	"Mon 02 Jan'06",              // TradingView 2
 	"2006/01/02 15:04",           // Binance
 	"01/02 03:04:05PM '06 -0700", // The reference time, in numerical order.
 	"Mon Jan _2 15:04:05 2006",
