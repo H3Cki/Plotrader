@@ -57,11 +57,6 @@ func (f *follower) startFollow(ctx context.Context, follow domain.Follow, exchan
 			if err != nil {
 				f.logger.Errorf("error handling interval: %v", err)
 			}
-			if breakingError(err) {
-				f.logger.Errorf("breaking error, stopping loop")
-				return err
-			}
-			f.logger.Errorf("non-breaking error, continuing")
 			return nil
 		})
 	}()
@@ -70,6 +65,9 @@ func (f *follower) startFollow(ctx context.Context, follow domain.Follow, exchan
 }
 
 func breakingError(err error) bool {
+	if err == nil {
+		return false
+	}
 	switch {
 	case errors.Is(err, outbound.ErrPriceOutOfRange):
 		return false
@@ -88,13 +86,16 @@ func (f *follower) handleTick(ctx context.Context, tick time.Time, followID stri
 	}()
 
 	err := f.updateOrders(uCtx, tick, followID, ex)
-
-	if err != nil {
+	if breakingError(err) {
+		f.logger.Errorf("breaking error, stopping loop")
 		f.logger.Debug("cancelling all orders due to error")
 		if cErr := f.cancelOrders(ctx, followID, ex); cErr != nil {
 			err = fmt.Errorf("%w : %w", err, cErr)
 		}
+		return err
 	}
+
+	f.logger.Errorf("non-breaking error, continuing")
 
 	return err
 }
