@@ -47,11 +47,6 @@ type Exchange struct {
 
 type ExchangeInfo futures.ExchangeInfo
 
-type orderIdentification struct {
-	OrderID int64  `json:"orderID"`
-	Symbol  string `json:"symbol"`
-}
-
 func New(logger *zap.SugaredLogger, cfg Config) *Exchange {
 	futures.UseTestnet = cfg.UserConfig.Testnet
 	return &Exchange{
@@ -84,33 +79,40 @@ func (f *Exchange) GetOrder(ctx context.Context, deo domain.ExchangeOrder) (doma
 
 // Order
 func (f *Exchange) CreateOrder(ctx context.Context, req outbound.CreateOrderRequest) (domain.ExchangeOrder, error) {
-	return f.createOrder(ctx, req)
+	resp, err := f.createOrder(ctx, req)
+	return resp, convertErr(err)
 }
 
 func (f *Exchange) ModifyOrder(ctx context.Context, req outbound.ModifyOrderRequest) (domain.ExchangeOrder, error) {
-	return f.modifyOrder(ctx, req)
+	resp, err := f.modifyOrder(ctx, req)
+	return resp, convertErr(err)
 }
 
 // TakeProfit
 func (f *Exchange) CreateTakeProfitOrder(ctx context.Context, req outbound.CreateTakeProfitRequest) (domain.ExchangeOrder, error) {
-	return f.createTP(ctx, req)
+	resp, err := f.createTP(ctx, req)
+	return resp, convertErr(err)
 }
 
 func (f *Exchange) ModifyTakeProfitOrder(ctx context.Context, req outbound.ModifyTakeProfitRequest) (domain.ExchangeOrder, error) {
-	return f.modifyTP(ctx, req)
+	resp, err := f.modifyTP(ctx, req)
+	return resp, convertErr(err)
 }
 
 // StopLoss
 func (f *Exchange) CreateStopLossOrder(ctx context.Context, req outbound.CreateStopLossRequest) (domain.ExchangeOrder, error) {
-	return f.createSL(ctx, req)
+	resp, err := f.createSL(ctx, req)
+	return resp, convertErr(err)
 }
 
 func (f *Exchange) ModifyStopLossOrder(ctx context.Context, req outbound.ModifyStopLossRequest) (domain.ExchangeOrder, error) {
-	return f.modifySL(ctx, req)
+	resp, err := f.modifySL(ctx, req)
+	return resp, convertErr(err)
 }
 
 func (f *Exchange) CancelOrder(ctx context.Context, eo domain.ExchangeOrder) error {
-	return f.cancelOrder(ctx, eo)
+	err := f.cancelOrder(ctx, eo)
+	return convertErr(err)
 }
 
 func (f *Exchange) createOrder(ctx context.Context, req outbound.CreateOrderRequest) (domain.ExchangeOrder, error) {
@@ -465,4 +467,17 @@ func (f *Exchange) symbol(ctx context.Context, symbol string) (futures.Symbol, e
 	}
 
 	return futures.Symbol{}, fmt.Errorf("unknown symbol: %s", symbol)
+}
+
+func convertErr(err error) error {
+	if err == nil {
+		return nil
+	}
+	if api, ok := err.(*common.APIError); ok {
+		switch api.Code {
+		case -4016:
+			return outbound.ErrPriceOutOfRange
+		}
+	}
+	return err
 }

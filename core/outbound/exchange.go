@@ -2,8 +2,13 @@ package outbound
 
 import (
 	"context"
+	"errors"
 
 	"github.com/H3Cki/Plotrader/core/domain"
+)
+
+var (
+	ErrPriceOutOfRange = errors.New("price out of range")
 )
 
 type ExchangeInfoer[T any] interface {

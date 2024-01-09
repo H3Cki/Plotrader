@@ -57,11 +57,22 @@ func (f *follower) startFollow(ctx context.Context, follow domain.Follow, exchan
 			if err != nil {
 				f.logger.Errorf("error handling interval: %v", err)
 			}
-			return err
+			if breakingError(err) {
+				return err
+			}
+			return nil
 		})
 	}()
 
 	return nil
+}
+
+func breakingError(err error) bool {
+	switch {
+	case errors.Is(err, outbound.ErrPriceOutOfRange):
+		return false
+	}
+	return true
 }
 
 func (f *follower) handleTick(ctx context.Context, tick time.Time, followID string, ex outbound.Exchange) error {

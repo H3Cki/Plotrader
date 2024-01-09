@@ -1,7 +1,6 @@
 package binancefutures
 
 import (
-	"encoding/json"
 	"fmt"
 
 	"github.com/H3Cki/Plotrader/core/domain"
@@ -40,19 +39,6 @@ func orderSide(side domain.Side, opposite bool) (futures.SideType, error) {
 		return s, nil
 	}
 	return "", fmt.Errorf("unsupported position side: %s", side)
-}
-
-// Conversion functions
-func parseOrderIdentification(data any) (orderIdentification, error) {
-	orderId := orderIdentification{}
-	orderDataBytes, err := json.Marshal(data)
-	if err != nil {
-		return orderIdentification{}, err
-	}
-	if err := json.Unmarshal(orderDataBytes, &orderId); err != nil {
-		return orderIdentification{}, err
-	}
-	return orderId, nil
 }
 
 func corToOrder(cor *futures.CreateOrderResponse) *futures.Order {
