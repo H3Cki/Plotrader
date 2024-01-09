@@ -58,8 +58,10 @@ func (f *follower) startFollow(ctx context.Context, follow domain.Follow, exchan
 				f.logger.Errorf("error handling interval: %v", err)
 			}
 			if breakingError(err) {
+				f.logger.Errorf("breaking error, stopping loop")
 				return err
 			}
+			f.logger.Errorf("non-breaking error, continuing")
 			return nil
 		})
 	}()
