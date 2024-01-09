@@ -199,7 +199,7 @@ func (f *Exchange) modifyTP(ctx context.Context, req outbound.ModifyTakeProfitRe
 	}
 
 	if eoCurrPrice, err := strconv.ParseFloat(eo.O.StopPrice, 64); err != nil && eoCurrPrice == req.Request.StopPrice {
-		f.logger.Infof("ignoring modification of TP %d, prev=%f, new=%f", eo.O.OrderID, eoCurrPrice, req.Request.StopPrice)
+		f.logger.Debugf("ignoring modification of TP %d, prev=%f, new=%f", eo.O.OrderID, eoCurrPrice, req.Request.StopPrice)
 		return eo, nil
 	}
 
@@ -264,7 +264,7 @@ func (f *Exchange) modifySL(ctx context.Context, req outbound.ModifyStopLossRequ
 	}
 
 	if eoCurrPrice, err := strconv.ParseFloat(eo.O.StopPrice, 64); err != nil && eoCurrPrice == req.Request.StopPrice {
-		f.logger.Infof("ignoring modification of SL %d, prev=%f, new=%f", eo.O.OrderID, eoCurrPrice, req.Request.StopPrice)
+		f.logger.Debugf("ignoring modification of SL %d, prev=%f, new=%f", eo.O.OrderID, eoCurrPrice, req.Request.StopPrice)
 		return eo, nil
 	}
 
@@ -317,7 +317,7 @@ func (f *Exchange) modifyOrder(ctx context.Context, req outbound.ModifyOrderRequ
 	// If error is "no need to modify the order, ignore err"
 	apiErr, ok := err.(*common.APIError)
 	if ok && apiErr.Code == -5027 {
-		f.logger.Infof("ignoring modification of order %d, prev=%s, new=%f", eo.O.OrderID, eo.O.Price, ov.price)
+		f.logger.Debugf("ignoring modification of order %d, prev=%s, new=%f", eo.O.OrderID, eo.O.Price, ov.price)
 		return eo, nil
 	}
 	if err != nil {
@@ -453,7 +453,7 @@ func (f *Exchange) symbol(ctx context.Context, symbol string) (futures.Symbol, e
 	}
 
 	// ExchangeInfo was not fresh, force reload and try finding symbol again
-	eiUpdated, err = f.info(ctx, true)
+	_, err = f.info(ctx, true)
 	if err != nil {
 		return futures.Symbol{}, err
 	}
